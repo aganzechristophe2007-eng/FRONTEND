@@ -1,0 +1,9 @@
+{
+  "short_name": "CBFSOKO",
+  "name": "CBFSOKO Marketplace",
+  "icons": [],
+  "start_url": "/",
+  "background_color": "#000000",
+  "theme_color": "#f97316",
+  "display": "standalone"
+}
