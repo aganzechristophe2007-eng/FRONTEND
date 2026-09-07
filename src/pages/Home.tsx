@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
   Search, PlusCircle, Sun, Moon, Zap, Wallet, 
   MessageSquare, Bell, LogOut, Package, ShieldCheck, Truck, 
-  Headphones, MapPin, CheckCircle2, Layers, Home as HomeIcon, Image as ImageIcon 
+  Headphones, MapPin, Home as HomeIcon, Image as ImageIcon, Sparkles, X, ChevronDown, Award, CreditCard, Camera, User as UserIcon, HelpCircle, History, Info, Target, Store
 } from 'lucide-react';
 import { apiFetch } from '../api/client';
 
@@ -39,8 +39,12 @@ interface ProductItem {
 export default function Home() {
   const [darkMode, setDarkMode] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showServicesDropdown, setShowServicesDropdown] = useState<boolean>(false);
+  const [showMobileServicesModal, setShowMobileServicesModal] = useState<boolean>(false);
   const location = useLocation();
   
+  const servicesDropdownRef = useRef<HTMLDivElement>(null);
+
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('user');
@@ -76,7 +80,8 @@ export default function Home() {
   const [unreadNotifsCount, setUnreadNotifsCount] = useState<number>(0);
   const navigate = useNavigate();
 
-  // Fonction utilitaire robuste pour formater les URLs d'images
+  const LOGO_URL = '/logo.png'; 
+
   const getImageUrl = useCallback((path?: string) => {
     if (!path) return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=500&q=80';
     if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('blob:') || path.startsWith('data:')) {
@@ -89,7 +94,6 @@ export default function Home() {
     return `https://cbfsoko-backend.onrender.com/uploads/${cleanPath}`;
   }, []);
 
-  // Synchronisation de l'avatar utilisateur
   const updateAvatarFromStorage = useCallback(() => {
     const updatedUserStr = localStorage.getItem('user');
     const offlineAv = localStorage.getItem('offline_avatar');
@@ -111,6 +115,19 @@ export default function Home() {
       }
     }
   }, [getImageUrl]);
+
+  // Gestion de la fermeture au clic en dehors pour le menu dropdown desktop
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (servicesDropdownRef.current && !servicesDropdownRef.current.contains(event.target as Node)) {
+        setShowServicesDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     const currentToken = localStorage.getItem('token');
@@ -135,7 +152,6 @@ export default function Home() {
           }
         })
         .catch((err) => {
-          console.error("Erreur de synchronisation utilisateur :", err);
           if (err?.status === 401 || err?.message?.includes('401')) {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
@@ -153,7 +169,7 @@ export default function Home() {
     apiFetch('/products')
       .then(data => {
         const list = Array.isArray(data) ? data : (data.data || []);
-        setFeaturedProducts(list.slice(0, 12));
+        setFeaturedProducts(list.slice(0, 16));
       })
       .catch(err => {
         console.error("Erreur chargement produits", err);
@@ -168,7 +184,6 @@ export default function Home() {
     };
   }, [getImageUrl, updateAvatarFromStorage]);
 
-  // Récupération des compteurs non lus (messages & notifications)
   useEffect(() => {
     const currentToken = localStorage.getItem('token');
     if (!currentToken) {
@@ -184,9 +199,7 @@ export default function Home() {
         const parsedUser = JSON.parse(userStr);
         currentUserId = parsedUser.id || parsedUser._id || '';
       }
-    } catch {
-      // Ignore
-    }
+    } catch {}
 
     const fetchUnreadCounts = async () => {
       try {
@@ -213,17 +226,15 @@ export default function Home() {
           setUnreadNotifsCount(resNotifCount.count || resNotifCount.data || 0);
         }
       } catch (err) {
-        console.error("Erreur lors de la récupération des compteurs non lus", err);
+        console.error("Erreur compteurs", err);
       }
     };
 
     fetchUnreadCounts();
     const interval = setInterval(fetchUnreadCounts, 15000);
-
     return () => clearInterval(interval);
   }, [token]);
 
-  // Comptage des commandes et demandes
   useEffect(() => {
     const currentToken = localStorage.getItem('token');
     if (!currentToken) {
@@ -240,9 +251,7 @@ export default function Home() {
             const parsedUser = JSON.parse(userStr);
             currentUserId = parsedUser.id || parsedUser._id || '';
           }
-        } catch {
-          // Ignore
-        }
+        } catch {}
 
         let ordersLength = 0;
         let demandesLength = 0;
@@ -251,9 +260,7 @@ export default function Home() {
           const resOrders = await apiFetch('/orders');
           const ordersList = Array.isArray(resOrders) ? resOrders : (resOrders.data || resOrders.orders || []);
           ordersLength = ordersList.length;
-        } catch {
-          // Ignore
-        }
+        } catch {}
 
         try {
           const resProducts = await apiFetch('/products');
@@ -262,22 +269,16 @@ export default function Home() {
           const userDemandes = productsList.filter((p: ProductItem) => {
             const pSellerId = p.sellerId || p.userId || p.seller?.id || p.seller?._id;
             const matchesUser = currentUserId ? (pSellerId === currentUserId) : true;
-            
             const typeStr = String(p.type || '').toUpperCase();
             const titleStr = String(p.title || '');
-            const isDemandeType = typeStr === 'REQUEST' || titleStr.includes('[DEMANDE]') || p.isDemande === true;
-
-            return matchesUser && isDemandeType;
+            return matchesUser && (typeStr === 'REQUEST' || titleStr.includes('[DEMANDE]') || p.isDemande === true);
           });
-
           demandesLength = userDemandes.length;
-        } catch {
-          // Ignore
-        }
+        } catch {}
 
         setOrdersCount(ordersLength + demandesLength);
       } catch (err) {
-        console.error("Erreur lors du comptage des commandes/demandes", err);
+        console.error("Erreur commandes", err);
       }
     };
 
@@ -309,11 +310,7 @@ export default function Home() {
 
   const handleOpenMessages = async () => {
     setUnreadMessagesCount(0);
-    try {
-      await apiFetch('/messages/mark-read', { method: 'POST' }).catch(() => {});
-    } catch {
-      // Ignore
-    }
+    try { await apiFetch('/messages/mark-read', { method: 'POST' }); } catch {}
     handleProtectedAction('/messages');
   };
 
@@ -333,99 +330,206 @@ export default function Home() {
 
   const memoizedAvatar = useMemo(() => {
     if (userAvatarUrl) {
-      return (
-        <img 
-          src={userAvatarUrl} 
-          alt={user?.name || 'User'} 
-          className="w-full h-full object-cover"
-          onError={(e) => {
-            (e.currentTarget as HTMLElement).style.display = 'none';
-          }}
-        />
-      );
+      return <img src={userAvatarUrl} alt={user?.name || 'User'} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} />;
     }
     if (user?.avatar) {
-      return (
-        <img 
-          src={getImageUrl(user.avatar)} 
-          alt={user?.name || 'User'} 
-          className="w-full h-full object-cover"
-          onError={(e) => {
-            (e.currentTarget as HTMLElement).style.display = 'none';
-          }}
-        />
-      );
+      return <img src={getImageUrl(user.avatar)} alt={user?.name || 'User'} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} />;
     }
     return getInitials(user?.name || 'U');
   }, [userAvatarUrl, user?.avatar, user?.name, getImageUrl]);
 
+  // Contenu riche et détaillé sur l'historique, les créateurs, la mission, les services et garanties de CBF SOKO
+  const detailedServicesContent = (
+    <div className="flex flex-col gap-4 max-h-[420px] overflow-y-auto pr-1 text-left">
+      
+      {/* Historique & Origine */}
+      <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
+        <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <History className="w-4 h-4" />
+        </div>
+        <div>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-400">Histoire & Origine de CBF SOKO</h5>
+          <p className="text-[11px] text-neutral-300 leading-relaxed">
+            Fondée à Bukavu (République Démocratique du Congo) par des entrepreneurs locaux visionnaires passionnés de tech, CBF SOKO est née du besoin urgent de digitaliser le commerce de proximité et de fluidifier les transactions entre acheteurs et vendeurs au Kivu avec un outil ultra-rapide, fiable et sécurisé.
+          </p>
+        </div>
+      </div>
+
+      {/* Vision & Créateurs */}
+      <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
+        <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Target className="w-4 h-4" />
+        </div>
+        <div>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-400">Nos Créateurs & Mission</h5>
+          <p className="text-[11px] text-neutral-300 leading-relaxed">
+            Imaginée par une équipe d'ingénieurs et développeurs congolais, notre mission est de connecter directement les boutiques physiques, marchés locaux et particuliers de la région pour booster l'économie numérique locale, en éliminant les intermédiaires superflus.
+          </p>
+        </div>
+      </div>
+
+      {/* Services & Multidevises */}
+      <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
+        <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Store className="w-4 h-4" />
+        </div>
+        <div>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-400">Nos Services Principaux</h5>
+          <p className="text-[11px] text-neutral-300 leading-relaxed">
+            Publication d'annonces instantanée par photo 📷, gestion de boutiques vérifiées, conversion automatique des prix en Dollars ($) et Francs Congolais (CDF), et messagerie interne en temps réel.
+          </p>
+        </div>
+      </div>
+
+      {/* Sécurité, Livraison & Garantie */}
+      <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
+        <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <ShieldCheck className="w-4 h-4" />
+        </div>
+        <div>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-400">Garantie & Paiements Sécurisés</h5>
+          <p className="text-[11px] text-neutral-300 leading-relaxed">
+            Chaque transaction est protégée par notre portefeuille électronique intégré. Les fonds restent sécurisés jusqu'à la livraison effective de votre colis par nos coursiers partenaires à Bukavu (Ibanda, Kadutu, Bagira).
+          </p>
+        </div>
+      </div>
+
+      {/* Support 7j/7 */}
+      <div className="flex items-start gap-3">
+        <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Headphones className="w-4 h-4" />
+        </div>
+        <div>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-400">Support Client 7j/7</h5>
+          <p className="text-[11px] text-neutral-300 leading-relaxed">
+            Une assistance dédiée et réactive disponible à tout moment pour résoudre vos litiges, répondre à vos questions et vous accompagner dans vos achats et ventes quotidiens.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  );
+
   return (
     <div className={`min-h-screen pb-20 sm:pb-8 transition-colors duration-300 relative ${darkMode ? 'bg-neutral-950 text-white' : 'bg-neutral-50 text-neutral-900'}`}>
       
-      {/* HEADER DESKTOP & MOBILE SEARCH */}
-      <header className={`sticky top-0 z-50 border-b px-2 sm:px-4 lg:px-8 py-2.5 sm:py-3 transition-colors ${
-        darkMode ? 'bg-neutral-900/90 border-neutral-800 backdrop-blur-md' : 'bg-white/90 border-neutral-200 backdrop-blur-md'
+      {/* HEADER ADAPTÉ (Disposition exacte : Caméra à gauche, Barre de recherche au milieu, Profil à droite + Bouton '?' pour les services) */}
+      <header className={`sticky top-0 z-50 border-b px-2 sm:px-6 lg:px-8 py-2.5 transition-colors ${
+        darkMode ? 'bg-neutral-900/95 border-neutral-800 backdrop-blur-md' : 'bg-white/95 border-neutral-200 backdrop-blur-md'
       }`}>
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-4">
-          <div className="flex items-center justify-between w-full md:w-auto gap-2 sm:gap-6">
-            
-            <Link to="/" className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-orange-600 rounded-lg sm:rounded-xl flex items-center justify-center text-white font-black text-xs sm:text-base shadow-lg shadow-orange-600/30">
-                CBF
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-1.5 sm:gap-4">
+          
+          {/* Logo / Nom (Desktop) & Bouton '?' / Caméra (Mobile) */}
+          <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0 relative" ref={servicesDropdownRef}>
+            <Link to="/" className="hidden sm:flex items-center gap-2">
+              <div className="w-9 h-9 sm:w-11 sm:h-11 bg-orange-600 rounded-xl flex items-center justify-center overflow-hidden shadow-md shadow-orange-600/30 border border-orange-500 relative">
+                <img 
+                  src={LOGO_URL} 
+                  alt="CBF SOKO Logo" 
+                  className="w-full h-full object-cover" 
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = 'none';
+                  }} 
+                />
               </div>
               <div>
-                <span className="font-extrabold text-xs sm:text-base tracking-tight block leading-none">CBFSOKO</span>
-                <span className="text-[9px] sm:text-[10px] text-orange-500 font-bold tracking-widest uppercase flex items-center gap-0.5 sm:gap-1">
-                  <MapPin className="w-2 h-2 sm:w-2.5 sm:h-2.5" /> Bukavu
+                <span className="font-extrabold text-sm sm:text-base tracking-tight block leading-none">CBFSOKO</span>
+                <span className="text-[9px] text-orange-500 font-bold tracking-widest uppercase flex items-center gap-0.5">
+                  <MapPin className="w-2.5 h-2.5" /> Bukavu
                 </span>
               </div>
             </Link>
 
-            {/* Navigation Desktop uniquement */}
-            <nav className="hidden sm:flex items-center gap-4 text-xs font-semibold">
-              <Link to="/products" className="hover:text-orange-500 transition flex items-center gap-1">
-                <span>Catalogue</span>
-              </Link>
+            {/* Petit bouton '?' à gauche (cliquable, ouvre la modale ou le menu déroulant complet) */}
+            <button 
+              onClick={() => {
+                setShowMobileServicesModal(true);
+                setShowServicesDropdown(prev => !prev);
+              }}
+              className="w-8 h-8 rounded-full bg-orange-600/20 border border-orange-500 text-orange-500 flex items-center justify-center font-bold text-xs cursor-pointer hover:bg-orange-600 hover:text-white transition shadow-sm"
+              title="À propos, Historique, Nos Services & Garanties"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
+
+            {/* SUR MOBILE : Icône Caméra (remplace 'Vendre') placée à gauche de la recherche */}
+            <button 
+              onClick={() => handleProtectedAction('/create-product')}
+              className="sm:hidden p-2 rounded-xl bg-orange-600 text-white shadow-md shadow-orange-600/30 border border-orange-500 flex items-center justify-center cursor-pointer hover:bg-orange-700 transition"
+              title="Publier un article (Caméra)"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
+
+            {/* Menu Déroulant DESKTOP pour les services et l'historique complet */}
+            <div className="relative hidden md:block">
               <button 
-                onClick={() => handleProtectedAction('/orders')}
-                className="hover:text-orange-500 transition flex items-center gap-1 relative cursor-pointer bg-transparent border-none text-inherit font-semibold"
+                onClick={() => setShowServicesDropdown(!showServicesDropdown)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
+                  darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-500 text-neutral-300' : 'bg-neutral-100 border-neutral-200 hover:border-orange-500 text-neutral-700'
+                }`}
               >
-                <Package className="w-3.5 h-3.5" /> 
-                <span>Commandes</span>
-                {ordersCount > 0 && (
-                  <span className="bg-orange-600 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full leading-tight">
-                    {ordersCount}
-                  </span>
-                )}
+                <span>À propos de CBF SOKO</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showServicesDropdown ? 'rotate-180 text-orange-500' : ''}`} />
               </button>
-              <button 
-                onClick={handleOpenMessages}
-                className="hover:text-orange-500 transition flex items-center gap-1 relative cursor-pointer bg-transparent border-none text-inherit font-semibold"
-              >
-                <MessageSquare className="w-3.5 h-3.5" /> 
-                <span>Messages</span>
-                {unreadMessagesCount > 0 && (
-                  <span className="absolute -top-1 -right-2 bg-red-600 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full shadow-md animate-pulse">
-                    {unreadMessagesCount}
-                  </span>
-                )}
-              </button>
-              <button 
-                onClick={handleOpenNotifications}
-                className="hover:text-orange-500 transition flex items-center gap-1 relative cursor-pointer bg-transparent border-none text-inherit font-semibold"
-              >
-                <Bell className="w-3.5 h-3.5" /> 
-                <span>Notifications</span>
-                {unreadNotifsCount > 0 && (
-                  <span className="absolute -top-1 -right-2 bg-red-600 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full shadow-md animate-pulse">
-                    {unreadNotifsCount}
-                  </span>
-                )}
-              </button>
-            </nav>
+
+              {showServicesDropdown && (
+                <div className={`absolute top-full left-0 mt-2 w-[420px] p-5 rounded-2xl border shadow-2xl z-50 transition-all ${
+                  darkMode ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-200 text-neutral-900'
+                }`}>
+                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-700/50">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-orange-600 text-white flex items-center justify-center font-bold">
+                        <Sparkles className="w-3.5 h-3.5" />
+                      </div>
+                      <h4 className="font-extrabold text-xs text-orange-500">Histoire, Créateurs & Services</h4>
+                    </div>
+                    <button onClick={() => setShowServicesDropdown(false)} className="text-neutral-400 hover:text-white cursor-pointer p-1">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {detailedServicesContent}
+                </div>
+              )}
+            </div>
           </div>
 
-          <form onSubmit={handleSearch} className="flex-1 max-w-lg w-full">
+          {/* Modale mobile pour l'historique, créateurs, services et garanties (fermeture garantie au clic en dehors / croix) */}
+          <AnimatePresence>
+            {showMobileServicesModal && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowMobileServicesModal(false)}
+                className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:hidden"
+              >
+                <motion.div 
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.9, y: 20 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`w-full max-w-sm p-5 rounded-2xl border relative shadow-2xl ${darkMode ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-200 text-neutral-900'}`}
+                >
+                  <div className="flex justify-between items-center mb-4 pb-2 border-b border-neutral-800">
+                    <h3 className="font-extrabold text-xs text-orange-500 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4" /> Histoire & Infos CBF SOKO
+                    </h3>
+                    <button 
+                      onClick={() => setShowMobileServicesModal(false)} 
+                      className="p-1 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {detailedServicesContent}
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Barre de recherche au milieu */}
+          <form onSubmit={handleSearch} className="flex-1 max-w-lg min-w-0 mx-1 sm:mx-4">
             <div className={`flex w-full items-center rounded-xl border overflow-hidden transition ${
               darkMode ? 'bg-neutral-950 border-neutral-800 focus-within:border-orange-500' : 'bg-neutral-100 border-neutral-300 focus-within:border-orange-500'
             }`}>
@@ -433,33 +537,83 @@ export default function Home() {
                 type="text" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Rechercher un produit à Bukavu..." 
-                className="w-full bg-transparent px-3 sm:px-4 py-2 text-xs sm:text-sm outline-none placeholder-neutral-500"
+                placeholder="Search Product..." 
+                className="w-full bg-transparent px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-sm outline-none placeholder-neutral-500 truncate"
               />
-              <button type="submit" className="bg-orange-600 hover:bg-orange-700 px-3 sm:px-4 py-2 text-white transition flex items-center justify-center cursor-pointer">
-                <Search className="w-4 h-4" />
+              <button type="submit" className="bg-orange-600 hover:bg-orange-700 px-2.5 sm:px-3 py-1.5 sm:py-2 text-white transition flex items-center justify-center cursor-pointer flex-shrink-0">
+                <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </div>
           </form>
 
-          <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
+          {/* Actions Droite (Profil utilisateur à droite, commandes, messages, notifications, mode sombre) */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
+            
+            <button 
+              onClick={() => handleProtectedAction('/orders')}
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer relative ${
+                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-500 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-500 text-neutral-700'
+              }`}
+            >
+              <Package className="w-4 h-4 text-orange-500" />
+              <span>Commandes</span>
+              {ordersCount > 0 && (
+                <span className="bg-orange-600 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
+                  {ordersCount}
+                </span>
+              )}
+            </button>
+
+            <button 
+              onClick={handleOpenMessages}
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer relative ${
+                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-500 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-500 text-neutral-700'
+              }`}
+              title="Messages"
+            >
+              <MessageSquare className="w-4 h-4 text-orange-500" />
+              <span>Messages</span>
+              {unreadMessagesCount > 0 && (
+                <span className="bg-red-600 text-white text-[10px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
+                  {unreadMessagesCount}
+                </span>
+              )}
+            </button>
+
+            <button 
+              onClick={handleOpenNotifications}
+              className={`hidden md:flex items-center p-2 rounded-xl border transition cursor-pointer relative ${
+                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-500 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-500 text-neutral-700'
+              }`}
+              title="Notifications"
+            >
+              <Bell className="w-4 h-4 text-orange-500" />
+              {unreadNotifsCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
+                  {unreadNotifsCount}
+                </span>
+              )}
+            </button>
+
             <button 
               onClick={() => handleProtectedAction('/create-product')}
-              className="hidden sm:flex items-center gap-1 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-md shadow-orange-600/20 cursor-pointer"
+              className="hidden sm:flex items-center gap-1 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs px-3 py-2 rounded-xl transition shadow-md shadow-orange-600/20 cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
               <span>Vendre</span>
             </button>
 
+            {/* Profil utilisateur à droite */}
             {token ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button 
                   onClick={() => handleProtectedAction('/wallet')}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-xl border transition group cursor-pointer ${
-                    darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-500 text-white' : 'bg-white border-neutral-300 hover:border-orange-500 text-neutral-900'
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-xl border transition cursor-pointer ${
+                    darkMode ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
                   }`}
+                  title="Profil & Portefeuille"
                 >
-                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-orange-600 text-white font-bold text-xs flex items-center justify-center shadow overflow-hidden relative">
+                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-orange-600 text-white font-bold text-xs flex items-center justify-center overflow-hidden flex-shrink-0">
                     {memoizedAvatar}
                   </div>
                   <div className="hidden sm:flex flex-col text-left">
@@ -467,25 +621,25 @@ export default function Home() {
                     <span className="text-xs font-black text-orange-500">{user?.balance ?? 0} $</span>
                   </div>
                 </button>
-                <button onClick={handleLogout} className="p-2 rounded-xl bg-red-600/20 border border-red-800 text-red-400 hover:bg-red-600 hover:text-white transition cursor-pointer" title="Se déconnecter">
+                <button onClick={handleLogout} className="p-2 rounded-xl bg-red-600/20 border border-red-800 text-red-400 hover:bg-red-600 hover:text-white transition cursor-pointer hidden sm:block" title="Se déconnecter">
                   <LogOut className="w-4 h-4" />
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <Link to="/login" className="px-2.5 sm:px-3 py-2 rounded-xl text-xs font-bold bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white transition">Connexion</Link>
-                <Link to="/register" className="px-2.5 sm:px-3 py-2 rounded-xl text-xs font-bold bg-orange-600 hover:bg-orange-500 text-white transition">Inscription</Link>
+              <div className="flex items-center gap-1">
+                <Link to="/login" className="px-2 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold bg-neutral-800 text-white">Connexion</Link>
+                <Link to="/register" className="px-2 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold bg-orange-600 text-white hidden sm:block">Inscription</Link>
               </div>
             )}
 
-            <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-xl border transition flex items-center justify-center cursor-pointer ${darkMode ? 'bg-neutral-950 border-neutral-800 text-yellow-400' : 'bg-white border-neutral-300 text-neutral-800'}`}>
+            <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-xl border transition cursor-pointer ${darkMode ? 'bg-neutral-950 border-neutral-800 text-yellow-400' : 'bg-white border-neutral-300 text-neutral-800'}`}>
               {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4 text-orange-600" />}
             </button>
           </div>
         </div>
       </header>
 
-      {/* BARRE D'ONGLETS MOBILE */}
+      {/* BARRE D'ONGLETS MOBILE EN BAS */}
       <div className={`sm:hidden fixed bottom-0 left-0 right-0 z-50 border-t flex items-center justify-around py-2 px-1 backdrop-blur-md transition-colors ${
         darkMode ? 'bg-neutral-900/95 border-neutral-800 text-neutral-400' : 'bg-white/95 border-neutral-200 text-neutral-600'
       }`}>
@@ -516,9 +670,9 @@ export default function Home() {
             className="w-12 h-12 bg-orange-600 hover:bg-orange-700 text-white rounded-full flex items-center justify-center shadow-lg shadow-orange-600/40 border-4 border-neutral-950 cursor-pointer transition transform active:scale-95"
             title="Publier un article"
           >
-            <PlusCircle className="w-6 h-6" />
+            <Camera className="w-6 h-6" />
           </button>
-          <span className="text-[10px] font-bold text-orange-500 mt-0.5">Vendre</span>
+          <span className="text-[10px] font-bold text-orange-500 mt-0.5">Poster</span>
         </div>
 
         <button 
@@ -535,80 +689,22 @@ export default function Home() {
         </button>
 
         <button 
-          onClick={handleOpenNotifications}
-          className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/notifications') ? 'text-orange-500 font-bold' : 'hover:text-orange-500'}`}
+          onClick={() => handleProtectedAction('/wallet')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/wallet') ? 'text-orange-500 font-bold' : 'hover:text-orange-500'}`}
         >
-          <Bell className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px]">Notifs</span>
-          {unreadNotifsCount > 0 && (
-            <span className="absolute top-0 right-3 bg-red-600 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
-              {unreadNotifsCount}
-            </span>
-          )}
+          <UserIcon className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Profil</span>
         </button>
       </div>
 
-      {/* BOX PROFESSIONNELLES */}
-      <section className="max-w-7xl mx-auto px-4 pt-6 pb-2">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className={`p-4 sm:p-5 rounded-2xl border transition flex items-start gap-4 ${
-            darkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'
-          }`}>
-            <div className="w-10 h-10 rounded-xl bg-orange-600/10 text-orange-500 flex items-center justify-center flex-shrink-0 border border-orange-500/20">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-sm mb-1">Paiement Sécurisé</h4>
-              <p className="text-xs text-neutral-400 leading-relaxed">Transactions protégées par portefeuille intégré et validation par code.</p>
-            </div>
-          </div>
-
-          <div className={`p-4 sm:p-5 rounded-2xl border transition flex items-start gap-4 ${
-            darkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'
-          }`}>
-            <div className="w-10 h-10 rounded-xl bg-orange-600/10 text-orange-500 flex items-center justify-center flex-shrink-0 border border-orange-500/20">
-              <Truck className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-sm mb-1">Livraison Rapide</h4>
-              <p className="text-xs text-neutral-400 leading-relaxed">Service de logistique de confiance disponible à travers tous les quartiers de Bukavu.</p>
-            </div>
-          </div>
-
-          <div className={`p-4 sm:p-5 rounded-2xl border transition flex items-start gap-4 ${
-            darkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'
-          }`}>
-            <div className="w-10 h-10 rounded-xl bg-orange-600/10 text-orange-500 flex items-center justify-center flex-shrink-0 border border-orange-500/20">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-sm mb-1">Vendeurs Vérifiés</h4>
-              <p className="text-xs text-neutral-400 leading-relaxed">Profils contrôlés et évalués par la communauté pour zéro mauvaise surprise.</p>
-            </div>
-          </div>
-
-          <div className={`p-4 sm:p-5 rounded-2xl border transition flex items-start gap-4 ${
-            darkMode ? 'bg-neutral-900/60 border-neutral-800' : 'bg-white border-neutral-200 shadow-sm'
-          }`}>
-            <div className="w-10 h-10 rounded-xl bg-orange-600/10 text-orange-500 flex items-center justify-center flex-shrink-0 border border-orange-500/20">
-              <Headphones className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-sm mb-1">Support 7j/7</h4>
-              <p className="text-xs text-neutral-400 leading-relaxed">Une équipe locale dédiée pour vous assister à tout moment en cas de besoin.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* HOT PRODUCTS */}
-      <section className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex justify-between items-center mb-6 border-b border-neutral-800 pb-4">
+      {/* CATALOGUE / PRODUITS (4 produits par ligne en mobile, aspect parfaitement carré, texte réduit en bas) */}
+      <section className="max-w-7xl mx-auto px-2 sm:px-4 py-6">
+        <div className="flex justify-between items-center mb-5 border-b border-neutral-800 pb-3">
           <div className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-orange-500" />
-            <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">BYA BIKO DISPO</h2>
+            <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-orange-500" />
+            <h2 className="text-base sm:text-2xl font-extrabold tracking-tight">BYA BIKO DISPO</h2>
           </div>
-          <Link to="/products" className="text-orange-500 hover:text-orange-400 font-semibold text-xs uppercase tracking-wider transition flex items-center gap-1">
+          <Link to="/products" className="text-orange-500 hover:text-orange-400 font-semibold text-[11px] sm:text-xs uppercase tracking-wider transition flex items-center gap-1">
             Catalogue complet &rarr;
           </Link>
         </div>
@@ -623,41 +719,40 @@ export default function Home() {
             Aucun produit disponible pour le moment. Soyez le premier à en poster un !
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 2xl:grid-cols-6 gap-3 sm:gap-6">
+          <div className="grid grid-cols-4 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-6 gap-1.5 sm:gap-6">
             {featuredProducts.map((product, index) => {
               const productId = product.id || product._id;
-              const prodTitle = product.title || 'Article sans nom';
+              const prodTitle = product.title || 'Article';
               const priceUSDValue = product.priceUSD || 0;
               const priceCDFValue = product.priceCDF || 0;
               
-              const priceUSDStr = priceUSDValue > 0 ? `${priceUSDValue} $` : 'Prix sur demande';
+              const priceUSDStr = priceUSDValue > 0 ? `${priceUSDValue} $` : 'Sur demande';
               const priceCDFStr = priceCDFValue > 0 ? `${priceCDFValue.toLocaleString()} CDF` : '';
 
               const prodCategory = typeof product.category === 'object' && product.category !== null ? product.category.name : 'Général';
               
-// Gestion des images et du nombre total de photos (2 à 5 photos)
-const imagesList = Array.isArray(product.images) ? product.images : [];
-const rawImage = imagesList.length > 0 ? imagesList[0] : undefined;
-const prodImage = getImageUrl(rawImage);
-const photosCount = imagesList.length;
+              const imagesList = Array.isArray(product.images) ? product.images : [];
+              const rawImage = imagesList.length > 0 ? imagesList[0] : undefined;
+              const prodImage = getImageUrl(rawImage);
+              const photosCount = imagesList.length;
 
-const posterName = product.seller?.name || 'Vendeur';
+              const posterName = product.seller?.name || 'Vendeur';
 
-return (
-  <motion.div 
-    key={productId || index}
-    initial={{ opacity: 0, y: 20 }}
-    whileInView={{ opacity: 1, y: 0 }}
-    viewport={{ once: true }}
-    transition={{ duration: 0.3, delay: index * 0.03 }}
-    onClick={() => navigate(`/products/${productId}`)}
-    className={`rounded-xl sm:rounded-2xl overflow-hidden border group shadow-md transition flex flex-col justify-between cursor-pointer hover:border-orange-500 ${
-      darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'
-    }`}
-  >
-    <div>
-                    {/* Conteneur image cliquable avec indicateur du nombre de photos */}
-                    <div className="h-36 sm:h-48 overflow-hidden bg-neutral-950 relative">
+              return (
+                <motion.div 
+                  key={productId || index}
+                  initial={{ opacity: 0, y: 15 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.3, delay: index * 0.02 }}
+                  onClick={() => navigate(`/products/${productId}`)}
+                  className={`rounded-lg sm:rounded-2xl overflow-hidden border group shadow-sm transition flex flex-col justify-between cursor-pointer hover:border-orange-500 ${
+                    darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'
+                  }`}
+                >
+                  <div>
+                    {/* Image carrée (aspect-square) garantie */}
+                    <div className="aspect-square w-full overflow-hidden bg-neutral-950 relative">
                       <img 
                         src={prodImage} 
                         alt={prodTitle} 
@@ -666,33 +761,33 @@ return (
                           (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=500&q=80';
                         }}
                       />
-                      <span className="absolute top-2 left-2 sm:top-3 sm:left-3 bg-black/85 backdrop-blur-md text-[9px] sm:text-[10px] font-bold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md text-orange-400 border border-neutral-700 truncate max-w-[100px]">
+                      <span className="absolute top-1 left-1 sm:top-2 sm:left-2 bg-black/80 backdrop-blur-md text-[8px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded text-orange-400 border border-neutral-700 truncate max-w-[70px] sm:max-w-[100px]">
                         {prodCategory}
                       </span>
 
-                      {/* Badge indiquant le nombre de photos disponibles (ex: 5 photos) */}
                       {photosCount > 0 && (
-                        <span className="absolute bottom-2 right-2 bg-black/75 backdrop-blur-md text-white text-[9px] sm:text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1 border border-neutral-700/60 shadow">
-                          <ImageIcon className="w-3 h-3 text-orange-400" />
-                          <span>{photosCount} {photosCount > 1 ? 'photos' : 'photo'}</span>
+                        <span className="absolute bottom-1 right-1 bg-black/75 backdrop-blur-md text-white text-[8px] sm:text-[10px] font-bold px-1 py-0.5 rounded flex items-center gap-0.5 border border-neutral-700/60 shadow">
+                          <ImageIcon className="w-2.5 h-2.5 text-orange-400" />
+                          <span>{photosCount}</span>
                         </span>
                       )}
                     </div>
 
-                    <div className="p-3 sm:p-4">
-                      <div className="flex justify-between items-center text-[10px] sm:text-[11px] text-neutral-400 mb-1">
-                        <span className="truncate max-w-[80px] sm:max-w-[120px]" title={posterName}>Par : <strong className="text-neutral-300">{posterName}</strong></span>
-                        <span className="flex items-center gap-0.5"><MapPin className="w-2.5 h-2.5 text-orange-500" /> Bukavu</span>
+                    {/* Bloc texte extrêmement compact et police réduite pour mobile (4 par ligne) */}
+                    <div className="p-1.5 sm:p-4">
+                      <div className="flex justify-between items-center text-[8px] sm:text-[11px] text-neutral-400 mb-0.5">
+                        <span className="truncate max-w-[50px] sm:max-w-[120px]" title={posterName}><strong>{posterName}</strong></span>
+                        <span className="flex items-center gap-0.5"><MapPin className="w-2 h-2 text-orange-500" /> Bukavu</span>
                       </div>
 
-                      <h3 className="font-bold text-xs sm:text-sm mb-1 sm:mb-2 truncate group-hover:text-orange-500 transition">{prodTitle}</h3>
+                      <h3 className="font-bold text-[9px] sm:text-sm mb-1 truncate group-hover:text-orange-500 transition leading-tight">{prodTitle}</h3>
 
-                      <div className="mt-2">
-                        <div className="text-orange-500 font-black text-xs sm:text-sm">
+                      <div>
+                        <div className="text-orange-500 font-black text-[9px] sm:text-sm leading-none">
                           {priceUSDStr}
                         </div>
                         {priceCDFStr && (
-                          <div className="text-[10px] sm:text-[11px] text-neutral-400 font-medium">
+                          <div className="text-[7px] sm:text-[11px] text-neutral-400 font-medium truncate mt-0.5">
                             ≈ {priceCDFStr}
                           </div>
                         )}
@@ -700,15 +795,15 @@ return (
                     </div>
                   </div>
 
-                  <div className="p-3 sm:p-4 pt-0">
+                  <div className="p-1.5 sm:p-4 pt-0">
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
                         navigate(`/products/${productId}`);
                       }}
-                      className="w-full py-2 bg-orange-600/10 hover:bg-orange-600 hover:text-white text-orange-500 font-bold text-xs rounded-xl transition border border-orange-500/20 flex items-center justify-center gap-1 cursor-pointer"
+                      className="w-full py-1 sm:py-2 bg-orange-600/10 hover:bg-orange-600 hover:text-white text-orange-500 font-bold text-[8px] sm:text-xs rounded-md sm:rounded-xl transition border border-orange-500/20 flex items-center justify-center gap-0.5 cursor-pointer"
                     >
-                      Voir le produit ({photosCount} 📷)
+                      <span>Voir</span> <span className="hidden sm:inline">({photosCount} 📷)</span>
                     </button>
                   </div>
                 </motion.div>
@@ -717,6 +812,42 @@ return (
           </div>
         )}
       </section>
+
+      {/* FOOTER */}
+      <footer className={`border-t py-8 px-4 sm:px-8 mt-12 transition-colors ${
+        darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-400' : 'bg-white border-neutral-200 text-neutral-600'
+      }`}>
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center overflow-hidden shadow-md border border-orange-500 relative">
+              <img 
+                src={LOGO_URL} 
+                alt="CBF SOKO Logo" 
+                className="w-full h-full object-cover" 
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }} 
+              />
+            </div>
+            <div>
+              <span className="font-extrabold text-sm text-white block">CBF SOKO Bukavu</span>
+              <p className="text-[11px]">La plateforme de confiance pour vos achats et ventes en RDC.</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap justify-center gap-6 text-xs font-semibold">
+            <Link to="/products" className="hover:text-orange-500 transition">Catalogue</Link>
+            <Link to="/wallet" className="hover:text-orange-500 transition">Portefeuille</Link>
+            <Link to="/orders" className="hover:text-orange-500 transition">Commandes</Link>
+            <Link to="/messages" className="hover:text-orange-500 transition">Support</Link>
+          </div>
+
+          <div className="text-[11px] text-neutral-500">
+            &copy; {new Date().getFullYear()} CBF SOKO. Tous droits réservés.
+          </div>
+        </div>
+      </footer>
+
     </div>
   );
-}" " 
+}

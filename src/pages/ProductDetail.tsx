@@ -1,342 +1,477 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { 
-  ArrowLeft, MapPin, ShieldCheck, MessageSquare, 
-  Layers, ChevronLeft, ChevronRight, Share2 
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Upload, X, ArrowLeft, PlusCircle, CheckCircle2, Sparkles, Tag, DollarSign, Hash, Layers, Sun, Moon } from 'lucide-react';
 import { apiFetch } from '../api/client';
 
-interface ProductItem {
-  id?: string;
-  _id?: string;
-  title: string;
-  description?: string;
-  priceUSD: number;
-  priceCDF: number;
-  category?: { name: string } | string;
-  images: string[] | string;
-  sellerId?: string;
-  userId?: string;
-  seller?: { id: string; _id?: string; name: string; email?: string; phone?: string; avatar?: string };
-  location?: string;
-  state?: string;
-  quantity?: number | string;
-  createdAt?: string;
+const EXCHANGE_RATE = 2300; // 1 USD = 2300 CDF
+
+interface Category {
+  id: string;
+  name: string;
 }
 
-export default function ProductDetail() {
-  const { id } = useParams<{ id: string }>();
+// Fonction utilitaire pour compresser l'image avant l'envoi
+const compressImage = (file: File): Promise<File> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1000;
+        const MAX_HEIGHT = 1000;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const compressedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(compressedFile);
+          } else {
+            resolve(file);
+          }
+        }, 'image/jpeg', 0.8);
+      };
+    };
+  });
+};
+
+export default function CreateProduct() {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
 
-  const [product, setProduct] = useState<ProductItem | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
-  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [isDarkMode, setIsDarkMode] = useState(true);
 
-  // Fonction utilitaire pour formater proprement les URLs des images
-  const getImageUrl = useCallback((path?: string) => {
-    if (!path) return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80';
-    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('blob:') || path.startsWith('data:')) {
-      return path;
-    }
-    const cleanPath = path.replace(/\\/g, '/').replace(/^\/+/, '');
-    if (cleanPath.startsWith('uploads/')) {
-      return `https://cbfsoko-backend.onrender.com/${cleanPath}`;
-    }
-    return `https://cbfsoko-backend.onrender.com/uploads/${cleanPath}`;
-  }, []);
+  const [postType, setPostType] = useState<'SALE' | 'REQUEST'>('SALE');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryId, setCategoryId] = useState('');
+  
+  const [currency, setCurrency] = useState<'USD' | 'CDF'>('USD');
+  const [amountInput, setAmountInput] = useState('');
+  const [priceUSD, setPriceUSD] = useState(0);
+  const [priceCDF, setPriceCDF] = useState(0);
+  
+  const [itemState, setItemState] = useState('NEW');
+
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
 
   useEffect(() => {
-    try {
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        const parsed = JSON.parse(userStr);
-        setCurrentUserId(parsed.id || parsed._id || '');
-      }
-    } catch {
-      // Ignore parsing errors
-    }
-
-    if (!id) return;
-
-    setLoading(true);
-    apiFetch(`/products/${id}`)
-      .then(res => {
-        const prodData = res.product || res.data || res;
-        setProduct(prodData);
-      })
-      .catch(err => {
-        console.error("Erreur chargement produit:", err);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [id]);
-
-  const handleContactSeller = async () => {
     const token = localStorage.getItem('token');
     if (!token) {
-      navigate(`/login?redirect=/products/${id}`);
+      navigate('/login?redirect=/create-product');
       return;
     }
 
-    if (!product) return;
+    const fetchCategories = async () => {
+      try {
+        const data = await apiFetch('/categories');
+        const list = Array.isArray(data) ? data : (data.data || []);
+        setCategories(list);
+        if (list.length > 0 && !categoryId) {
+          setCategoryId(list[0].id);
+        }
+      } catch (err) {
+        setError("Erreur lors du chargement des catégories.");
+      }
+    };
 
-    const sellerInfo = product.seller;
-    const sellerId = product.sellerId || product.userId || sellerInfo?.id || sellerInfo?._id;
+    fetchCategories();
+  }, [navigate, categoryId]);
 
-    if (!sellerId) {
-      alert("Impossible de contacter ce vendeur pour le moment.");
-      return;
-    }
-
-    if (sellerId === currentUserId) {
-      alert("C'est votre propre article !");
-      return;
-    }
-
-    const defaultMsg = `Bonjour, je suis intéressé(e) par votre article "${product.title}" publié sur CBFSOKO. Est-il toujours disponible ?`;
-
-    try {
-      await apiFetch('/messages', {
-        method: 'POST',
-        body: JSON.stringify({ receiverId: sellerId, content: defaultMsg })
-      });
-      localStorage.setItem('activeConversationId', sellerId);
-      navigate('/messages', { state: { conversationId: sellerId, defaultMessage: defaultMsg } });
-    } catch (err) {
-      console.error("Erreur envoi message:", err);
-      navigate('/messages');
+  const handleAmountChange = (value: string) => {
+    setAmountInput(value);
+    const num = parseFloat(value) || 0;
+    if (currency === 'USD') {
+      setPriceUSD(num);
+      setPriceCDF(num * EXCHANGE_RATE);
+    } else {
+      setPriceCDF(num);
+      setPriceUSD(num / EXCHANGE_RATE);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center justify-center gap-3">
-        <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-xs text-neutral-400 font-medium tracking-wide">Chargement de l'article...</p>
-      </div>
-    );
-  }
-
-  if (!product) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center justify-center p-6 text-center">
-        <h2 className="text-base font-bold mb-2">Produit introuvable</h2>
-        <p className="text-xs text-neutral-400 mb-6 max-w-xs">Cet article a peut-être été supprimé ou l'adresse est incorrecte.</p>
-        <button 
-          onClick={() => navigate('/')} 
-          className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-lg shadow-orange-600/20"
-        >
-          Retour à l'accueil
-        </button>
-      </div>
-    );
-  }
-
-  // Normalisation sécurisée des images (tableau ou chaîne unique)
-  let imagesList: string[] = ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80'];
-  if (product.images) {
-    if (Array.isArray(product.images) && product.images.length > 0) {
-      imagesList = product.images;
-    } else if (typeof product.images === 'string') {
-      try {
-        const parsed = JSON.parse(product.images);
-        if (Array.isArray(parsed) && parsed.length > 0) imagesList = parsed;
-        else if (product.images.trim() !== '') imagesList = [product.images];
-      } catch {
-        imagesList = [product.images];
-      }
+  const toggleCurrency = (newCurrency: 'USD' | 'CDF') => {
+    setCurrency(newCurrency);
+    const num = parseFloat(amountInput) || 0;
+    if (newCurrency === 'USD') {
+      setPriceUSD(num);
+      setPriceCDF(num * EXCHANGE_RATE);
+    } else {
+      setPriceCDF(num);
+      setPriceUSD(num / EXCHANGE_RATE);
     }
-  }
+  };
 
-  const categoryName = typeof product.category === 'object' && product.category !== null 
-    ? product.category.name 
-    : (product.category || 'Général');
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-  const sellerName = product.seller?.name || 'Vendeur CBFSOKO';
-  const sellerAvatar = product.seller?.avatar ? getImageUrl(product.seller.avatar) : null;
+    const totalFiles = [...imageFiles, ...files];
+    if (totalFiles.length > 5) {
+      setError("Maximum 5 images autorisées.");
+      return;
+    }
+
+    setError('');
+    setImageFiles(totalFiles);
+    const newPreviews = files.map(file => URL.createObjectURL(file));
+    setImagePreviews(prev => [...prev, ...newPreviews]);
+  };
+
+  const removeImage = (index: number) => {
+    setImageFiles(prev => prev.filter((_, i) => i !== index));
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!categoryId) {
+      setError("Veuillez sélectionner une catégorie.");
+      return;
+    }
+
+    if (imageFiles.length < 2) {
+      setError("Veuillez ajouter au moins 2 images obligatoires (maximum 5).");
+      return;
+    }
+
+    setLoading(true);
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError("Session expirée. Veuillez vous reconnecter.");
+      setLoading(false);
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+      const formData = new FormData();
+      formData.append('type', postType);
+      formData.append('title', postType === 'REQUEST' ? `[DEMANDE] ${title}` : title);
+      formData.append('description', description);
+      formData.append('categoryId', categoryId);
+      formData.append('quantity', quantity);
+      formData.append('durationMode', 'FREE_24H');
+      formData.append('expiresAt', expiresAt.toISOString());
+      formData.append('priceUSD', Number(priceUSD.toFixed(2)).toString());
+      formData.append('priceCDF', Number(priceCDF.toFixed(2)).toString());
+
+      if (postType === 'SALE') {
+        formData.append('state', itemState);
+        formData.append('isSold', 'false');
+      }
+
+      for (const file of imageFiles) {
+        const optimizedFile = await compressImage(file);
+        formData.append('images', optimizedFile);
+      }
+
+      await apiFetch('/products', {
+        method: 'POST',
+        body: formData,
+      });
+
+      setSuccess(true);
+      setTimeout(() => {
+        navigate(postType === 'REQUEST' ? '/admin/dashboard' : '/products');
+      }, 1500);
+
+    } catch (err: any) {
+      setError(err.message || "Une erreur est survenue lors de l'enregistrement.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white pb-28 selection:bg-orange-500 selection:text-white">
-      
-      {/* HEADER ÉPURÉ & FIXE */}
-      <header className="sticky top-0 z-40 bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-neutral-900 px-4 py-3">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <button 
-            onClick={() => navigate(-1)} 
-            className="flex items-center gap-2 text-xs font-bold text-neutral-300 hover:text-orange-500 transition cursor-pointer bg-transparent border-none p-0"
-          >
-            <div className="w-8 h-8 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center">
-              <ArrowLeft className="w-4 h-4 text-orange-500" />
+    <div className={`min-h-screen transition-colors duration-300 py-2 px-2 sm:py-8 sm:px-4 flex items-center justify-center relative overflow-x-hidden ${
+      isDarkMode ? 'bg-[#0a0a0c] text-slate-100' : 'bg-slate-100 text-slate-900'
+    }`}>
+      <motion.div 
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className={`w-full max-w-xl backdrop-blur-xl border rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 shadow-xl relative z-10 transition-colors duration-300 ${
+          isDarkMode 
+            ? 'bg-slate-900/95 border-slate-800 shadow-black/60' 
+            : 'bg-white border-slate-200 shadow-slate-300/40'
+        }`}
+      >
+        {/* En-tête compact */}
+        <div className={`flex justify-between items-center mb-4 pb-3 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+          <div className="flex items-center gap-2.5">
+            <div className={`p-2 rounded-xl border ${isDarkMode ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' : 'bg-orange-50 text-orange-600 border-orange-200'}`}>
+              <PlusCircle className="w-4 h-4" />
             </div>
-            <span>Retour</span>
-          </button>
-
-          <div className="flex items-center gap-1.5 bg-neutral-900/80 border border-neutral-800 px-3 py-1.5 rounded-full">
-            <MapPin className="w-3.5 h-3.5 text-orange-500" />
-            <span className="text-[11px] font-bold tracking-wide uppercase text-neutral-200">Bukavu</span>
+            <div>
+              <h1 className="text-xs sm:text-sm font-black tracking-tight">
+                {postType === 'SALE' ? 'Mettre en vente' : 'Formuler une recherche'}
+              </h1>
+              <p className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>CBFSOKO Gratuit</p>
+            </div>
           </div>
+          
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className={`p-1.5 rounded-xl border transition cursor-pointer ${
+                isDarkMode 
+                  ? 'bg-slate-800/50 border-slate-700 text-amber-400 hover:bg-slate-800' 
+                  : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
+              }`}
+              title="Changer de thème"
+            >
+              {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            </button>
+            <Link 
+              to="/" 
+              className={`text-[11px] font-semibold flex items-center gap-1 px-2.5 py-1.5 rounded-xl border transition ${
+                isDarkMode 
+                  ? 'bg-slate-800/50 text-slate-400 hover:text-white border-slate-700' 
+                  : 'bg-slate-100 text-slate-600 hover:text-slate-900 border-slate-200'
+              }`}
+            >
+              <ArrowLeft className="w-3 h-3" /> Retour
+            </Link>
+          </div>
+        </div>
 
-          <button 
-            onClick={() => {
-              if (navigator.share) {
-                navigator.share({ title: product.title, url: window.location.href }).catch(() => {});
-              } else {
-                navigator.clipboard.writeText(window.location.href);
-                alert("Lien copié !");
-              }
-            }}
-            className="w-9 h-9 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 hover:text-orange-500 hover:border-neutral-700 transition cursor-pointer"
-            title="Partager"
+        {/* Sélecteur de type d'annonce */}
+        <div className={`grid grid-cols-2 gap-1.5 mb-4 p-1 rounded-xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-200 border-slate-300'}`}>
+          <button
+            type="button"
+            onClick={() => setPostType('SALE')}
+            className={`py-2 rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              postType === 'SALE' ? 'bg-orange-600 text-white shadow-md' : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
+            }`}
           >
-            <Share2 className="w-4 h-4" />
+            <Tag className="w-3 h-3" /> Vente
+          </button>
+          <button
+            type="button"
+            onClick={() => setPostType('REQUEST')}
+            className={`py-2 rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              postType === 'REQUEST' ? 'bg-orange-600 text-white shadow-md' : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Sparkles className="w-3 h-3" /> Recherche
           </button>
         </div>
-      </header>
 
-      {/* CONTENU PRINCIPAL */}
-      <main className="max-w-4xl mx-auto px-4 pt-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-        
-        {/* GALERIE PHOTO OPTIMISÉE */}
-        <div className="space-y-3">
-          <div className="h-80 sm:h-96 rounded-3xl overflow-hidden bg-neutral-900 border border-neutral-900 relative shadow-2xl group">
-            <img 
-              src={getImageUrl(imagesList[activeImageIndex])} 
-              alt={product.title} 
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80';
-              }}
+        {error && <div className="mb-3 p-2.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-[11px]">{error}</div>}
+        {success && <div className="mb-3 p-2.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-[11px]">Publication enregistrée ! Redirection...</div>}
+
+        <form onSubmit={handleSubmit} className="space-y-3 pb-4">
+          <div>
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Titre</label>
+            <input 
+              type="text" 
+              required 
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ex: Infinix Hot 30 128Go"
+              className={`w-full border rounded-xl px-3 py-2.5 outline-none text-xs transition ${
+                isDarkMode 
+                  ? 'bg-slate-950 border-slate-800 text-white focus:border-orange-500' 
+                  : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-orange-600'
+              }`}
             />
-            
-            {imagesList.length > 1 && (
-              <>
-                <button 
-                  onClick={() => setActiveImageIndex((prev) => (prev === 0 ? imagesList.length - 1 : prev - 1))}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-black/50 hover:bg-orange-600 text-white rounded-full backdrop-blur-md flex items-center justify-center transition border border-white/10 cursor-pointer"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={() => setActiveImageIndex((prev) => (prev === imagesList.length - 1 ? 0 : prev + 1))}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-black/50 hover:bg-orange-600 text-white rounded-full backdrop-blur-md flex items-center justify-center transition border border-white/10 cursor-pointer"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </>
-            )}
+          </div>
 
-            <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-md text-[10px] font-bold px-3 py-1.5 rounded-xl text-orange-400 border border-white/10 tracking-wider">
-              {activeImageIndex + 1} / {imagesList.length} photos
+          <div>
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1.5 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+              <Layers className="w-3 h-3 text-orange-500" /> Catégorie
+            </label>
+            <div className={`grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto p-1.5 border rounded-xl ${
+              isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-300'
+            }`}>
+              {categories.map((cat) => {
+                const isSelected = categoryId === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setCategoryId(cat.id)}
+                    className={`p-2 rounded-lg border text-[11px] font-semibold transition text-left flex items-center justify-between cursor-pointer ${
+                      isSelected 
+                        ? 'bg-orange-600/20 border-orange-500 text-orange-400' 
+                        : isDarkMode 
+                          ? 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200' 
+                          : 'bg-white border-slate-200 text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className="truncate">{cat.name}</span>
+                    {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-orange-500 shrink-0 ml-1" />}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* MINIATURES */}
-          {imagesList.length > 1 && (
-            <div className="flex items-center gap-2.5 overflow-x-auto pb-1 scrollbar-none">
-              {imagesList.map((img, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setActiveImageIndex(idx)}
-                  className={`w-16 h-16 rounded-2xl overflow-hidden border-2 transition flex-shrink-0 cursor-pointer ${
-                    activeImageIndex === idx ? 'border-orange-500 scale-95 shadow-lg shadow-orange-500/20' : 'border-neutral-900 opacity-50 hover:opacity-100'
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                <Hash className="w-3 h-3 text-orange-500" /> Quantité
+              </label>
+              <input 
+                type="number" 
+                min="1"
+                required
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                className={`w-full border rounded-xl px-3 py-2.5 outline-none text-xs font-bold transition ${
+                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-orange-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-orange-600'
+                }`}
+              />
+            </div>
+
+            {postType === 'SALE' && (
+              <div>
+                <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>État</label>
+                <select 
+                  value={itemState}
+                  onChange={(e) => setItemState(e.target.value)}
+                  className={`w-full border rounded-xl px-3 py-2.5 outline-none text-xs cursor-pointer font-medium transition ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-orange-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-orange-600'
                   }`}
                 >
-                  <img src={getImageUrl(img)} alt={`Aperçu ${idx + 1}`} className="w-full h-full object-cover" />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* INFORMATIONS & DETAILS */}
-        <div className="flex flex-col justify-between space-y-6">
-          <div className="space-y-5">
-            <div>
-              <span className="inline-block bg-orange-500/10 border border-orange-500/20 text-orange-400 text-[10px] font-extrabold px-3 py-1 rounded-lg uppercase tracking-widest mb-2.5">
-                {categoryName}
-              </span>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white leading-snug">{product.title}</h1>
-            </div>
-
-            {/* PRIX DESIGN */}
-            <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-900 space-y-1">
-              <div className="text-orange-500 text-2xl font-black tracking-tight">
-                {product.priceUSD > 0 ? `${product.priceUSD} $` : 'Prix sur demande'}
+                  <option value="NEW">Neuf</option>
+                  <option value="LIKE_NEW">Comme neuf</option>
+                  <option value="GOOD">Bon état</option>
+                  <option value="ACCEPTABLE">Acceptable</option>
+                </select>
               </div>
-              {product.priceCDF > 0 && (
-                <div className="text-xs text-neutral-400 font-medium">
-                  ≈ {product.priceCDF.toLocaleString()} CDF
+            )}
+          </div>
+
+          <div className={`space-y-2 p-3 border rounded-xl ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-300'}`}>
+            <div className="flex justify-between items-center">
+              <label className={`block text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                <DollarSign className="w-3 h-3 text-orange-500" /> Prix unitaire
+              </label>
+              <div className={`flex p-0.5 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                <button type="button" onClick={() => toggleCurrency('USD')} className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition ${currency === 'USD' ? 'bg-orange-600 text-white' : 'text-slate-400'}`}>USD</button>
+                <button type="button" onClick={() => toggleCurrency('CDF')} className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition ${currency === 'CDF' ? 'bg-orange-600 text-white' : 'text-slate-400'}`}>CDF</button>
+              </div>
+            </div>
+            <input 
+              type="number" 
+              step="any"
+              value={amountInput}
+              onChange={(e) => handleAmountChange(e.target.value)}
+              placeholder="Montant"
+              className={`w-full border rounded-xl px-3 py-2.5 outline-none text-xs font-bold transition ${
+                isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
+              }`}
+            />
+          </div>
+
+          <div>
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Description</label>
+            <textarea 
+              rows={2}
+              required 
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Détails du produit..."
+              className={`w-full border rounded-xl p-3 outline-none resize-none text-xs transition ${
+                isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-orange-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-orange-600'
+              }`}
+            />
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <label className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                Images (Min. 2, Max. 5)
+              </label>
+              <span className="text-[10px] font-semibold text-orange-500">
+                {imageFiles.length}/5
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-2">
+              {imagePreviews.map((src, index) => (
+                <div key={index} className={`relative h-20 border rounded-xl overflow-hidden flex items-center justify-center ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-300 bg-slate-100'}`}>
+                  <img src={src} alt={`Preview ${index}`} className="w-full h-full object-cover" />
+                  <button 
+                    type="button" 
+                    onClick={() => removeImage(index)} 
+                    className="absolute top-1 right-1 p-1 rounded-full bg-red-600 text-white shadow"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
                 </div>
+              ))}
+
+              {imageFiles.length < 5 && (
+                <label className={`h-20 border border-dashed rounded-xl flex flex-col items-center justify-center gap-1 cursor-pointer transition ${
+                  isDarkMode ? 'border-slate-700 hover:border-orange-500 bg-slate-950 text-slate-400' : 'border-slate-400 hover:border-orange-600 bg-slate-50 text-slate-600'
+                }`}>
+                  <Upload className="w-4 h-4 text-orange-500" />
+                  <span className="text-[10px] font-medium">Ajouter</span>
+                  <input type="file" accept="image/*" multiple onChange={handleImageChange} className="hidden" />
+                </label>
               )}
             </div>
-
-            {/* SPÉCIFICATIONS RAPIDES */}
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3.5 rounded-2xl bg-neutral-950 border border-neutral-900 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-500 flex-shrink-0">
-                  <Layers className="w-4 h-4" />
-                </div>
-                <div>
-                  <span className="block text-[10px] text-neutral-400 font-medium">État / Stock</span>
-                  <span className="font-bold text-neutral-200">{product.state || 'Disponible'} ({product.quantity || 1})</span>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-neutral-950 border border-neutral-900 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-500 flex-shrink-0">
-                  <MapPin className="w-4 h-4" />
-                </div>
-                <div>
-                  <span className="block text-[10px] text-neutral-400 font-medium">Localisation</span>
-                  <span className="font-bold text-neutral-200 truncate">{product.location || 'Bukavu'}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* DESCRIPTION */}
-            <div className="space-y-2">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">Description</h3>
-              <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed whitespace-pre-line bg-neutral-950/50 p-4 rounded-2xl border border-neutral-900">
-                {product.description || "Aucune description détaillée n'a été fournie pour cet article."}
-              </p>
-            </div>
-
-            {/* VENDEUR CARTE */}
-            <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-900 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-orange-600 text-white font-extrabold flex items-center justify-center overflow-hidden shadow-md shadow-orange-600/20">
-                  {sellerAvatar ? (
-                    <img src={sellerAvatar} alt={sellerName} className="w-full h-full object-cover" />
-                  ) : (
-                    sellerName.substring(0, 2).toUpperCase()
-                  )}
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-xs text-white">{sellerName}</span>
-                    <ShieldCheck className="w-4 h-4 text-orange-500" />
-                  </div>
-                  <span className="text-[10px] text-neutral-400 font-medium">Membre vérifié CBFSOKO</span>
-                </div>
-              </div>
-            </div>
+            {imageFiles.length < 2 && (
+              <p className="text-[10px] text-amber-500 font-medium">Ajoutez encore {2 - imageFiles.length} photo(s) minimum.</p>
+            )}
           </div>
 
-          {/* BOUTON D'ACTION FLOTTANT / FIXE EN BAS */}
-          <div className="pt-4 border-t border-neutral-900">
-            <button 
-              onClick={handleContactSeller}
-              className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white font-black text-xs sm:text-sm rounded-2xl shadow-xl shadow-orange-600/30 transition flex items-center justify-center gap-2.5 cursor-pointer active:scale-98"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>Contacter le vendeur & Commander</span>
-            </button>
-          </div>
-
-        </div>
-      </main>
+          <button 
+            type="submit" 
+            disabled={loading || imageFiles.length < 2}
+            className="w-full bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-extrabold py-3 rounded-xl transition shadow-md cursor-pointer disabled:opacity-50 text-xs flex items-center justify-center gap-2 mt-2"
+          >
+            {loading ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Compression & Envoi...</span>
+              </>
+            ) : (
+              'Publier l\'annonce'
+            )}
+          </button>
+        </form>
+      </motion.div>
     </div>
   );
 }
