@@ -635,27 +635,27 @@ export default function Home() {
 
               const prodCategory = typeof product.category === 'object' && product.category !== null ? product.category.name : 'Général';
               
-              // Gestion des images et du nombre total de photos (2 à 5 photos)
-              const imagesList = Array.isArray(product.images) ? product.images : [];
-              const rawImage = imagesList.length > 0 ? imagesList[0] : null;
-              const prodImage = getImageUrl(rawImage);
-              const photosCount = imagesList.length;
+// Gestion des images et du nombre total de photos (2 à 5 photos)
+const imagesList = Array.isArray(product.images) ? product.images : [];
+const rawImage = imagesList.length > 0 ? imagesList[0] : undefined;
+const prodImage = getImageUrl(rawImage);
+const photosCount = imagesList.length;
 
-              const posterName = product.seller?.name || 'Vendeur';
+const posterName = product.seller?.name || 'Vendeur';
 
-              return (
-                <motion.div 
-                  key={productId || index}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.3, delay: index * 0.03 }}
-                  onClick={() => navigate(`/products/${productId}`)}
-                  className={`rounded-xl sm:rounded-2xl overflow-hidden border group shadow-md transition flex flex-col justify-between cursor-pointer hover:border-orange-500 ${
-                    darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'
-                  }`}
-                >
-                  <div>
+return (
+  <motion.div 
+    key={productId || index}
+    initial={{ opacity: 0, y: 20 }}
+    whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true }}
+    transition={{ duration: 0.3, delay: index * 0.03 }}
+    onClick={() => navigate(`/products/${productId}`)}
+    className={`rounded-xl sm:rounded-2xl overflow-hidden border group shadow-md transition flex flex-col justify-between cursor-pointer hover:border-orange-500 ${
+      darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'
+    }`}
+  >
+    <div>
                     {/* Conteneur image cliquable avec indicateur du nombre de photos */}
                     <div className="h-36 sm:h-48 overflow-hidden bg-neutral-950 relative">
                       <img 
