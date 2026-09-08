@@ -17,15 +17,15 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install Node.js
+      - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
 
-      - name: Install dependencies & Build
+      - name: Install dependencies & Build Vite
         run: |
           npm install
-          npm install -D @capacitor/cli
+          npm install -D @capacitor/cli @capacitor/android
           npm run build
 
       - name: Sync Capacitor Android
