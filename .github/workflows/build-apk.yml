@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,14 +24,15 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies & Build Vite
+      - name: Install dependencies & Build
         run: |
           npm install
+          npm install -D @capacitor/cli
           npm run build
 
       - name: Sync Capacitor Android
         run: |
-          npx --no-install cap sync android || npx cap sync android
+          npx cap sync android
 
       - name: Build APK with Gradle
         run: |
