@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, LogOut, Send, Inbox, AlertCircle, UserPlus, CheckCircle, Headphones, Sun, Moon, MessageCircle, Search, User as UserIcon } from 'lucide-react';
+import { ArrowLeft, LogOut, Send, Inbox, AlertCircle, UserPlus, CheckCircle, Headphones, Sun, Moon, MessageCircle, Search, User as UserIcon, CheckCheck, Smile, Paperclip } from 'lucide-react';
 
 interface ContactUser {
   id: string;
@@ -43,7 +43,7 @@ export default function MessagesPage() {
   const [newMessage, setNewMessage] = useState('');
   
   const [activeBottomTab, setActiveBottomTab] = useState<'chats' | 'people'>('chats');
-  const [isLightMode, setIsLightMode] = useState(true);
+  const [isLightMode, setIsLightMode] = useState(false);
   const [pendingRequests, setPendingRequests] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -110,7 +110,7 @@ export default function MessagesPage() {
       if (currentToken) {
         fetchMessages(selectedContact.id, true);
       }
-    }, 5000);
+    }, 4000);
 
     return () => clearInterval(interval);
   }, [selectedContact?.id]);
@@ -354,13 +354,13 @@ export default function MessagesPage() {
   return (
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-200 text-xs sm:text-sm ${isLightMode ? 'bg-slate-100 text-slate-900' : 'bg-zinc-950 text-zinc-100'}`}>
       
-      {/* En-tête supérieur compact */}
-      <header className={`border px-3 py-2.5 sticky top-0 z-50 transition-colors duration-200 ${
-        isLightMode ? 'border-slate-200 bg-white shadow-sm' : 'border-zinc-800 bg-zinc-900 shadow-md'
+      {/* En-tête supérieur moderne */}
+      <header className={`border-b px-3.5 py-3 sticky top-0 z-50 backdrop-blur-md transition-colors duration-200 ${
+        isLightMode ? 'border-slate-200 bg-white/90 shadow-xs' : 'border-zinc-800/80 bg-zinc-900/90 shadow-md'
       }`}>
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 w-full">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-xs overflow-hidden relative shadow-sm">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 w-full">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-xs overflow-hidden relative shadow-xs">
               {currentUserAvatarUrl ? (
                 <img 
                   src={currentUserAvatarUrl} 
@@ -370,44 +370,52 @@ export default function MessagesPage() {
                 />
               ) : (
                 <span className="font-bold text-orange-500">
-                  {userName ? userName.charAt(0).toUpperCase() : <UserIcon className="w-3.5 h-3.5" />}
+                  {userName ? userName.charAt(0).toUpperCase() : <UserIcon className="w-4 h-4" />}
                 </span>
               )}
             </div>
-            <h1 className={`text-sm sm:text-base font-black tracking-tight ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>Chats</h1>
+            <div>
+              <h1 className={`text-sm sm:text-base font-black tracking-tight ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>Messagerie</h1>
+              <p className="text-[10px] text-orange-500 font-semibold flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> En ligne
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <button
               onClick={handleOpenSupportChat}
-              className={`p-2 rounded-lg border transition cursor-pointer flex items-center justify-center ${
-                isLightMode ? 'bg-white text-orange-600 border-slate-200 hover:bg-orange-50' : 'bg-zinc-900 text-orange-400 border-zinc-800 hover:bg-zinc-800'
+              className={`p-2 rounded-xl border transition cursor-pointer flex items-center justify-center gap-1 font-semibold ${
+                isLightMode ? 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100' : 'bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20'
               }`}
               title="Support Client"
             >
-              <Headphones className="w-3.5 h-3.5" />
+              <Headphones className="w-4 h-4" />
+              <span className="hidden sm:inline text-xs">Support</span>
             </button>
 
             <button
               onClick={() => setIsLightMode(!isLightMode)}
-              className={`p-2 rounded-lg text-xs font-bold transition cursor-pointer border ${
-                isLightMode ? 'bg-white text-amber-500 border-slate-200 hover:bg-slate-50' : 'bg-zinc-900 text-amber-400 border-zinc-800 hover:bg-zinc-800'
+              className={`p-2 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                isLightMode ? 'bg-slate-100 text-amber-600 border-slate-200 hover:bg-slate-200' : 'bg-zinc-800 text-amber-400 border-zinc-700 hover:bg-zinc-700'
               }`}
+              title="Changer de thème"
             >
-              {isLightMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5 text-amber-400" />}
+              {isLightMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-amber-400" />}
             </button>
 
-            <Link to="/" className={`p-2 rounded-lg border transition ${
-              isLightMode ? 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50' : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:bg-zinc-800'
-            }`}>
-              <ArrowLeft className="w-3.5 h-3.5" />
+            <Link to="/" className={`p-2 rounded-xl border transition flex items-center justify-center ${
+              isLightMode ? 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200' : 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700'
+            }`} title="Retour à l'accueil">
+              <ArrowLeft className="w-4 h-4" />
             </Link>
 
             <button
               onClick={handleLogout}
-              className="p-2 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-600 hover:text-white transition cursor-pointer border border-rose-500/20"
+              className="p-2 rounded-xl bg-rose-500/15 text-rose-500 hover:bg-rose-600 hover:text-white transition cursor-pointer border border-rose-500/30 flex items-center justify-center"
+              title="Déconnexion"
             >
-              <LogOut className="w-3.5 h-3.5" />
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -416,36 +424,37 @@ export default function MessagesPage() {
       <main className="max-w-7xl w-full mx-auto p-2 sm:p-4 lg:p-6 flex-1 flex flex-col pb-20">
         
         {error && (
-          <div className="mb-3 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center gap-2">
-            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+          <div className="mb-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs flex items-center gap-2.5 shadow-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span className="font-semibold">{error}</span>
           </div>
         )}
 
         {successMsg && (
-          <div className="mb-3 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs flex items-center gap-2">
-            <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+          <div className="mb-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs flex items-center gap-2.5 shadow-sm">
+            <CheckCircle className="w-4 h-4 flex-shrink-0" />
             <span className="font-semibold">{successMsg}</span>
           </div>
         )}
 
         {activeBottomTab === 'chats' ? (
-          <div className={`border rounded-2xl overflow-hidden flex-1 shadow-sm grid grid-cols-1 md:grid-cols-12 min-h-[500px] ${
+          <div className={`border rounded-2xl overflow-hidden flex-1 shadow-md grid grid-cols-1 md:grid-cols-12 min-h-[550px] ${
             isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'
           }`}>
             
+            {/* Liste des discussions (Style WhatsApp moderne) */}
             <div className={`md:col-span-4 border-r flex flex-col ${showMobileChat ? 'hidden md:flex' : 'flex'} ${
-              isLightMode ? 'border-slate-200 bg-slate-50' : 'border-zinc-800 bg-zinc-900'
+              isLightMode ? 'border-slate-200 bg-slate-50/50' : 'border-zinc-800 bg-zinc-900/50'
             }`}>
               
-              <div className="p-2.5 border-b border-slate-200 dark:border-zinc-800">
-                <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border ${
-                  isLightMode ? 'bg-white border-slate-300' : 'bg-zinc-950 border-zinc-700'
+              <div className="p-3 border-b border-slate-200/80 dark:border-zinc-800">
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition ${
+                  isLightMode ? 'bg-white border-slate-300 focus-within:border-orange-500' : 'bg-zinc-950 border-zinc-700/80 focus-within:border-orange-500'
                 }`}>
-                  <Search className={`w-3.5 h-3.5 ${isLightMode ? 'text-slate-400' : 'text-zinc-400'}`} />
+                  <Search className={`w-4 h-4 ${isLightMode ? 'text-slate-400' : 'text-zinc-400'}`} />
                   <input
                     type="text"
-                    placeholder="Rechercher..."
+                    placeholder="Rechercher une discussion..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full bg-transparent text-xs font-medium outline-none"
@@ -453,10 +462,17 @@ export default function MessagesPage() {
                 </div>
               </div>
 
-              <div className="overflow-y-auto flex-1 divide-y divide-slate-200 dark:divide-zinc-800">
+              <div className="overflow-y-auto flex-1 divide-y divide-slate-200/60 dark:divide-zinc-800/60">
                 {acceptedContacts.length === 0 ? (
-                  <div className="p-6 text-center">
-                    <p className={`text-xs font-medium ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>Aucune discussion.</p>
+                  <div className="p-8 text-center flex flex-col items-center justify-center h-full">
+                    <MessageCircle className={`w-10 h-10 mb-2 ${isLightMode ? 'text-slate-300' : 'text-zinc-700'}`} />
+                    <p className={`text-xs font-medium ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>Aucune discussion active.</p>
+                    <button 
+                      onClick={() => setActiveBottomTab('people')}
+                      className="mt-3 bg-orange-600 hover:bg-orange-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl transition cursor-pointer"
+                    >
+                      Trouver des contacts
+                    </button>
                   </div>
                 ) : (
                   acceptedContacts
@@ -474,13 +490,13 @@ export default function MessagesPage() {
                             setShowMobileChat(true);
                             fetchMessages(contact.id, false);
                           }}
-                          className={`p-2.5 sm:p-3 flex items-center gap-2.5 cursor-pointer transition ${
+                          className={`p-3 sm:p-3.5 flex items-center gap-3 cursor-pointer transition ${
                             isSelected 
-                              ? isLightMode ? 'bg-orange-50 border-l-3 border-orange-600' : 'bg-orange-500/15 border-l-3 border-orange-500'
-                              : isLightMode ? 'hover:bg-slate-100' : 'hover:bg-zinc-800/80'
+                              ? isLightMode ? 'bg-orange-50 border-l-4 border-orange-600 shadow-inner' : 'bg-orange-500/15 border-l-4 border-orange-500 shadow-inner'
+                              : isLightMode ? 'hover:bg-slate-100/80' : 'hover:bg-zinc-800/60'
                           }`}
                         >
-                          <div className="w-9 h-9 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-xs flex-shrink-0 overflow-hidden relative shadow-xs">
+                          <div className="w-11 h-11 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-xs flex-shrink-0 overflow-hidden relative shadow-xs">
                             {avatarUrl ? (
                               <img 
                                 src={avatarUrl} 
@@ -490,21 +506,23 @@ export default function MessagesPage() {
                               />
                             ) : (
                               <span className="absolute inset-0 flex items-center justify-center font-bold text-orange-500">
-                                {contact.name ? contact.name.charAt(0).toUpperCase() : <UserIcon className="w-3.5 h-3.5" />}
+                                {contact.name ? contact.name.charAt(0).toUpperCase() : <UserIcon className="w-4 h-4" />}
                               </span>
+                            )}
+                            {online && (
+                              <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full"></span>
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between">
-                              <p className={`text-xs font-bold truncate ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>{contact.name}</p>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <p className={`text-xs sm:text-sm font-bold truncate ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>{contact.name}</p>
                               {hasUnread && (
-                                <span className="w-2 h-2 bg-orange-600 rounded-full flex-shrink-0 ml-1.5"></span>
+                                <span className="bg-orange-600 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full flex-shrink-0 ml-1.5 shadow-sm">
+                                  {contact.unreadCount}
+                                </span>
                               )}
                             </div>
-                            <p className={`text-[11px] truncate mt-0.5 ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>{contact.email}</p>
-                          </div>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <span className={`w-2 h-2 rounded-full ${online ? 'bg-emerald-500 ring-1 ring-emerald-500/20' : 'bg-slate-300 dark:bg-zinc-700'}`}></span>
+                            <p className={`text-[11px] truncate ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>{contact.email}</p>
                           </div>
                         </div>
                       );
@@ -513,18 +531,20 @@ export default function MessagesPage() {
               </div>
             </div>
 
-            <div className={`md:col-span-8 flex flex-col h-[500px] md:h-auto ${!showMobileChat ? 'hidden md:flex' : 'flex'}`}>
+            {/* Fenêtre de chat active */}
+            <div className={`md:col-span-8 flex flex-col h-[550px] md:h-auto ${!showMobileChat ? 'hidden md:flex' : 'flex'}`}>
               {selectedContact ? (
                 <>
-                  <div className={`p-2.5 sm:p-3 border-b flex items-center justify-between ${isLightMode ? 'border-slate-200 bg-white' : 'border-zinc-800 bg-zinc-900'}`}>
-                    <div className="flex items-center gap-2">
+                  {/* Entête du chat */}
+                  <div className={`p-3 sm:p-3.5 border-b flex items-center justify-between ${isLightMode ? 'border-slate-200 bg-white' : 'border-zinc-800 bg-zinc-900'}`}>
+                    <div className="flex items-center gap-3">
                       <button 
                         onClick={() => setShowMobileChat(false)}
-                        className="md:hidden p-1.5 rounded-lg text-orange-500 hover:bg-orange-500/10 transition"
+                        className="md:hidden p-1.5 rounded-xl text-orange-500 hover:bg-orange-500/10 transition cursor-pointer"
                       >
-                        <ArrowLeft className="w-4 h-4" />
+                        <ArrowLeft className="w-5 h-5" />
                       </button>
-                      <div className="w-8 h-8 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-xs flex-shrink-0 overflow-hidden relative">
+                      <div className="w-10 h-10 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-xs flex-shrink-0 overflow-hidden relative shadow-xs">
                         {selectedContact.avatar ? (
                           <img 
                             src={getAvatarUrl(selectedContact.avatar)} 
@@ -533,43 +553,52 @@ export default function MessagesPage() {
                             onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} 
                           />
                         ) : (
-                          selectedContact.name ? selectedContact.name.charAt(0).toUpperCase() : <UserIcon className="w-3.5 h-3.5" />
+                          selectedContact.name ? selectedContact.name.charAt(0).toUpperCase() : <UserIcon className="w-4 h-4" />
                         )}
                       </div>
                       <div>
                         <h3 className={`text-xs sm:text-sm font-bold ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>
                           {selectedContact.name}
                         </h3>
-                        <span className={`text-[10px] font-medium ${isUserOnline(selectedContact.updatedAt) ? 'text-emerald-500' : isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>
+                        <span className={`text-[10px] font-semibold flex items-center gap-1 ${isUserOnline(selectedContact.updatedAt) ? 'text-emerald-500' : isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>
+                          <span className={`w-2 h-2 rounded-full ${isUserOnline(selectedContact.updatedAt) ? 'bg-emerald-500' : 'bg-zinc-500'}`}></span>
                           {isUserOnline(selectedContact.updatedAt) ? 'En ligne' : 'Hors ligne'}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className={`flex-1 p-3 sm:p-4 overflow-y-auto space-y-2.5 ${isLightMode ? 'bg-slate-100' : 'bg-zinc-950'}`}>
+                  {/* Corps des messages (Arrière-plan WhatsApp / Tonalité pro) */}
+                  <div className={`flex-1 p-3.5 sm:p-5 overflow-y-auto space-y-3 ${
+                    isLightMode 
+                      ? 'bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:20px_20px] bg-slate-100' 
+                      : 'bg-[radial-gradient(#27272a_1px,transparent_1px)] [background-size:20px_20px] bg-zinc-950'
+                  }`}>
                     {messages.length === 0 ? (
                       <div className="h-full flex flex-col items-center justify-center text-center p-4">
-                        <MessageCircle className={`w-8 h-8 mb-2 ${isLightMode ? 'text-slate-400' : 'text-zinc-600'}`} />
-                        <p className={`text-[11px] font-medium ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>Aucun message.</p>
+                        <MessageCircle className={`w-12 h-12 mb-2 opacity-50 ${isLightMode ? 'text-slate-400' : 'text-zinc-600'}`} />
+                        <p className={`text-xs font-medium ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>Envoyez votre premier message pour démarrer la conversation.</p>
                       </div>
                     ) : (
                       messages.map((msg) => {
                         const isMe = msg.senderId === currentUserId;
                         return (
                           <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                            <div className={`max-w-[85%] sm:max-w-[75%] px-3 py-1.5 rounded-xl text-xs shadow-xs ${
+                            <div className={`max-w-[85%] sm:max-w-[70%] px-3.5 py-2.5 rounded-2xl text-xs shadow-sm ${
                               isMe 
-                                ? 'bg-orange-600 text-white font-medium rounded-br-xs' 
+                                ? 'bg-orange-600 text-white font-medium rounded-br-xs shadow-orange-600/10' 
                                 : isLightMode 
-                                  ? 'bg-white border border-slate-200 text-slate-900 rounded-bl-xs' 
-                                  : 'bg-zinc-800 border border-zinc-700 text-zinc-100 rounded-bl-xs'
+                                  ? 'bg-white border border-slate-200 text-slate-900 rounded-bl-xs shadow-xs' 
+                                  : 'bg-zinc-900 border border-zinc-800 text-zinc-100 rounded-bl-xs shadow-xs'
                             }`}>
-                              <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                              <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+                              <div className={`flex items-center gap-1 justify-end mt-1 text-[9px] font-medium ${
+                                isMe ? 'text-orange-200' : isLightMode ? 'text-slate-400' : 'text-zinc-500'
+                              }`}>
+                                <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                {isMe && <CheckCheck className="w-3.5 h-3.5 text-emerald-300" />}
+                              </div>
                             </div>
-                            <span className={`text-[9px] mt-0.5 px-1 font-medium ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>
-                              {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
                           </div>
                         );
                       })
@@ -577,57 +606,65 @@ export default function MessagesPage() {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  <form onSubmit={handleSendMessage} className={`p-2.5 sm:p-3 border-t flex items-center gap-2 ${isLightMode ? 'border-slate-200 bg-white' : 'border-zinc-800 bg-zinc-900'}`}>
+                  {/* Barre d'envoi de message (Expérience WhatsApp complète) */}
+                  <form onSubmit={handleSendMessage} className={`p-3 border-t flex items-center gap-2.5 ${isLightMode ? 'border-slate-200 bg-white' : 'border-zinc-800 bg-zinc-900'}`}>
+                    <button type="button" className={`p-2 rounded-xl transition cursor-pointer ${isLightMode ? 'text-slate-500 hover:bg-slate-100' : 'text-zinc-400 hover:bg-zinc-800'}`} title="Emojis">
+                      <Smile className="w-5 h-5" />
+                    </button>
+                    <button type="button" className={`p-2 rounded-xl transition cursor-pointer ${isLightMode ? 'text-slate-500 hover:bg-slate-100' : 'text-zinc-400 hover:bg-zinc-800'}`} title="Joindre un fichier">
+                      <Paperclip className="w-5 h-5" />
+                    </button>
                     <input
                       type="text"
-                      placeholder="Message..."
+                      placeholder="Tapez votre message..."
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
-                      className={`flex-1 text-xs px-3 py-2 rounded-xl border outline-none transition ${
+                      className={`flex-1 text-xs px-4 py-2.5 rounded-xl border outline-none transition ${
                         isLightMode ? 'bg-slate-50 border-slate-300 text-slate-900 focus:border-orange-600' : 'bg-zinc-950 border-zinc-700 text-zinc-100 focus:border-orange-500'
                       }`}
                     />
                     <button
                       type="submit"
                       disabled={!newMessage.trim()}
-                      className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white p-2 rounded-xl transition cursor-pointer shadow-sm flex items-center justify-center"
+                      className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white p-2.5 rounded-xl transition cursor-pointer shadow-md flex items-center justify-center"
+                      title="Envoyer"
                     >
-                      <Send className="w-3.5 h-3.5" />
+                      <Send className="w-4 h-4" />
                     </button>
                   </form>
                 </>
               ) : (
-                <div className="flex-1 hidden md:flex flex-col items-center justify-center p-4 text-center">
-                  <Inbox className={`w-10 h-10 mb-2 ${isLightMode ? 'text-slate-400' : 'text-zinc-600'}`} />
-                  <p className={`text-xs font-semibold ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>Sélectionnez une discussion.</p>
+                <div className="flex-1 hidden md:flex flex-col items-center justify-center p-6 text-center">
+                  <Inbox className={`w-12 h-12 mb-3 opacity-40 ${isLightMode ? 'text-slate-400' : 'text-zinc-600'}`} />
+                  <p className={`text-xs font-bold ${isLightMode ? 'text-slate-600' : 'text-zinc-300'}`}>Sélectionnez une discussion pour commencer à échanger.</p>
                 </div>
               )}
             </div>
           </div>
         ) : (
-          <div className={`border rounded-2xl p-3 sm:p-5 flex-1 shadow-sm ${isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'}`}>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className={`border rounded-2xl p-4 sm:p-6 flex-1 shadow-md ${isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'}`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
               <div>
-                <h2 className={`text-sm sm:text-base font-bold ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>Ajouter des amis</h2>
+                <h2 className={`text-sm sm:text-base font-bold ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>Annuaire des membres</h2>
                 <p className={`text-[11px] mt-0.5 font-medium ${isLightMode ? 'text-slate-600' : 'text-zinc-300'}`}>
                   Amis en contact : <span className="font-bold text-orange-600 dark:text-orange-500">{acceptedContacts.length}</span>
                 </p>
               </div>
-              <div className="relative w-full sm:w-64">
-                <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${isLightMode ? 'text-slate-400' : 'text-zinc-400'}`} />
+              <div className="relative w-full sm:w-72">
+                <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isLightMode ? 'text-slate-400' : 'text-zinc-400'}`} />
                 <input
                   type="text"
                   placeholder="Rechercher des membres..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`w-full text-xs pl-9 pr-3 py-2 rounded-xl border outline-none transition ${
+                  className={`w-full text-xs pl-9 pr-3.5 py-2.5 rounded-xl border outline-none transition ${
                     isLightMode ? 'bg-slate-50 border-slate-300 text-slate-900 focus:border-orange-600' : 'bg-zinc-950 border-zinc-700 text-zinc-100 focus:border-orange-500'
                   }`}
                 />
               </div>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {availableUsers
                 .filter(user => user.name?.toLowerCase().includes(searchQuery.toLowerCase()) || user.email?.toLowerCase().includes(searchQuery.toLowerCase()))
                 .map((user) => {
@@ -635,9 +672,9 @@ export default function MessagesPage() {
                   const isPending = pendingRequests.includes(user.id) || user.contactStatus === 'PENDING';
                   const avatarUrl = getAvatarUrl(user.avatar);
                   return (
-                    <div key={user.id} className={`p-2.5 border rounded-xl flex items-center justify-between gap-2.5 ${isLightMode ? 'border-slate-200 bg-slate-50' : 'border-zinc-800 bg-zinc-950'}`}>
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-[11px] flex-shrink-0 overflow-hidden relative">
+                    <div key={user.id} className={`p-3 border rounded-xl flex items-center justify-between gap-3 shadow-xs transition hover:border-orange-500/50 ${isLightMode ? 'border-slate-200 bg-slate-50/60' : 'border-zinc-800 bg-zinc-950'}`}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-xs flex-shrink-0 overflow-hidden relative shadow-xs">
                           {avatarUrl ? (
                             <img 
                               src={avatarUrl} 
@@ -646,7 +683,7 @@ export default function MessagesPage() {
                               onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} 
                             />
                           ) : (
-                            user.name ? user.name.charAt(0).toUpperCase() : <UserIcon className="w-3 h-3" />
+                            user.name ? user.name.charAt(0).toUpperCase() : <UserIcon className="w-4 h-4" />
                           )}
                         </div>
                         <div className="min-w-0">
@@ -656,16 +693,16 @@ export default function MessagesPage() {
                       </div>
                       
                       {isContact ? (
-                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg">Amis</span>
+                        <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">Amis</span>
                       ) : isPending ? (
-                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg">En attente</span>
+                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg">En attente</span>
                       ) : (
                         <button
                           onClick={() => handleSendContactRequest(user.id)}
-                          className="bg-orange-600 hover:bg-orange-500 text-white p-2 rounded-lg transition cursor-pointer shadow-sm flex items-center justify-center"
+                          className="bg-orange-600 hover:bg-orange-500 text-white p-2 rounded-xl transition cursor-pointer shadow-sm flex items-center justify-center"
                           title="Ajouter comme ami"
                         >
-                          <UserPlus className="w-3.5 h-3.5" />
+                          <UserPlus className="w-4 h-4" />
                         </button>
                       )}
                     </div>
@@ -676,34 +713,35 @@ export default function MessagesPage() {
         )}
       </main>
 
-      {/* Barre de navigation inférieure mobile compacte */}
-      <nav className={`fixed bottom-0 left-0 right-0 border-t py-2 px-4 z-50 flex items-center justify-around transition-colors duration-200 ${
-        isLightMode ? 'border-slate-200 bg-white shadow-xl' : 'border-zinc-800 bg-zinc-900 shadow-xl shadow-black/80'
+      {/* Barre de navigation inférieure mobile moderne */}
+      <nav className={`fixed bottom-0 left-0 right-0 border-t py-2.5 px-6 z-50 flex items-center justify-around transition-colors duration-200 ${
+        isLightMode ? 'border-slate-200 bg-white/95 shadow-xl' : 'border-zinc-800 bg-zinc-900/95 shadow-xl shadow-black/80 backdrop-blur-md'
       }`}>
         <button
           onClick={() => { setActiveBottomTab('chats'); setShowMobileChat(false); }}
-          className={`flex flex-col items-center gap-1 p-1.5 rounded-xl transition ${
+          className={`flex flex-col items-center gap-1 p-1.5 rounded-xl transition cursor-pointer ${
             activeBottomTab === 'chats' 
-              ? 'text-orange-600 dark:text-orange-500 font-bold' 
+              ? 'text-orange-600 dark:text-orange-500 font-bold scale-105' 
               : isLightMode ? 'text-slate-500 hover:text-slate-800' : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          <MessageCircle className="w-4 h-4" />
+          <MessageCircle className="w-5 h-5" />
           <span className="text-[10px]">Discussions</span>
         </button>
 
         <button
-          onClick={() => { setActiveBottomTab('people'); setShowMobileChat(false); }}
-          className={`flex flex-col items-center gap-1 p-1.5 rounded-xl transition ${
+          onClick={() => setActiveBottomTab('people')}
+          className={`flex flex-col items-center gap-1 p-1.5 rounded-xl transition cursor-pointer ${
             activeBottomTab === 'people' 
-              ? 'text-orange-600 dark:text-orange-500 font-bold' 
+              ? 'text-orange-600 dark:text-orange-500 font-bold scale-105' 
               : isLightMode ? 'text-slate-500 hover:text-slate-800' : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          <UserPlus className="w-4 h-4" />
-          <span className="text-[10px]">Ajouter</span>
+          <UserPlus className="w-5 h-5" />
+          <span className="text-[10px]">Membres</span>
         </button>
       </nav>
+
     </div>
   );
 }

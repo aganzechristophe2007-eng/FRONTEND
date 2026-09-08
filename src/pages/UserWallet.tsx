@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, User as UserIcon, Home, ArrowDownLeft, ArrowUpRight, CheckCircle, Wallet, TrendingUp, ShieldCheck } from 'lucide-react';
+import { X, User as UserIcon, Home, ArrowDownLeft, ArrowUpRight, CheckCircle, Wallet, TrendingUp, ShieldCheck, LogOut, Camera, Save } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   Chart as ChartJS,
@@ -51,6 +51,9 @@ export default function UserWallet() {
 
   const [profile, setProfile] = useState({ name: '', email: '', phone: '', avatar: '' });
   const [avatarPreview, setAvatarPreview] = useState<string>('');
+  const [isEditingProfile, setIsEditingProfile] = useState<boolean>(false);
+  const [profileLoading, setProfileLoading] = useState<boolean>(false);
+  const [profileMsg, setProfileMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   const [activeModal, setActiveModal] = useState<'none' | 'depot' | 'retrait'>('none');
   const [wizardStep, setWizardStep] = useState<number>(1);
@@ -94,6 +97,52 @@ export default function UserWallet() {
       console.error("Erreur de chargement", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    navigate('/login');
+  };
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileLoading(true);
+    setProfileMsg(null);
+    try {
+      const response = await fetch('https://cbfsoko-backend.onrender.com/api/users/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(profile)
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setProfileMsg({ type: 'success', text: 'Profil mis à jour avec succès !' });
+        setTimeout(() => setIsEditingProfile(false), 1500);
+      } else {
+        setProfileMsg({ type: 'error', text: data.message || 'Erreur lors de la mise à jour.' });
+      }
+    } catch (err) {
+      setProfileMsg({ type: 'error', text: 'Erreur de communication réseau.' });
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        setAvatarPreview(result);
+        setProfile(prev => ({ ...prev, avatar: result }));
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -186,9 +235,7 @@ export default function UserWallet() {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        display: false,
-      },
+      legend: { display: false },
       tooltip: {
         backgroundColor: '#18181b',
         borderColor: '#27272a',
@@ -201,14 +248,8 @@ export default function UserWallet() {
       },
     },
     scales: {
-      x: {
-        grid: { display: false },
-        ticks: { color: '#737373', font: { size: 10 } }
-      },
-      y: {
-        grid: { color: '#27272a', lineWidth: 0.5 },
-        ticks: { color: '#737373', font: { size: 10 } }
-      }
+      x: { grid: { display: false }, ticks: { color: '#737373', font: { size: 10 } } },
+      y: { grid: { color: '#27272a', lineWidth: 0.5 }, ticks: { color: '#737373', font: { size: 10 } } }
     }
   };
 
@@ -291,11 +332,101 @@ export default function UserWallet() {
         <button onClick={() => startWizard('retrait')} className="p-1.5 text-zinc-400 hover:text-orange-500 flex flex-col items-center gap-0.5 cursor-pointer">
           <ArrowDownLeft className="w-4 h-4 text-orange-400" /><span className="text-[9px]">Retrait</span>
         </button>
-        <button onClick={() => navigate('/profile')} className="p-1.5 text-zinc-400 hover:text-orange-500 flex flex-col items-center gap-0.5 cursor-pointer">
-          <UserIcon className="w-4 h-4" /><span className="text-[9px]">Profil</span>
+        <button onClick={() => setIsEditingProfile(true)} className="p-1.5 text-zinc-400 hover:text-orange-500 flex flex-col items-center gap-0.5 cursor-pointer">
+          <UserIcon className="w-4 h-4 text-orange-400" /><span className="text-[9px]">Profil</span>
         </button>
       </nav>
 
+      {/* Modal Profile, édition et déconnexion */}
+      {isEditingProfile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-3">
+          <div className="bg-zinc-900 border border-zinc-800 text-white w-full max-w-md rounded-2xl shadow-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
+              <h3 className="text-sm font-bold flex items-center gap-2 text-orange-400">
+                <UserIcon className="w-4 h-4" /> Gestion du Profil
+              </h3>
+              <button onClick={() => setIsEditingProfile(false)} className="text-zinc-400 hover:text-white cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {profileMsg && (
+              <div className={`p-2.5 rounded-xl text-xs font-semibold ${profileMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
+                {profileMsg.text}
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateProfile} className="space-y-4">
+              <div className="flex flex-col items-center gap-3">
+                <div className="relative w-20 h-20 rounded-full bg-zinc-800 border-2 border-orange-500 overflow-hidden flex items-center justify-center group">
+                  {avatarPreview ? (
+                    <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <UserIcon className="w-8 h-8 text-zinc-400" />
+                  )}
+                  <label className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center cursor-pointer transition-opacity text-white text-[10px]">
+                    <Camera className="w-5 h-5 mb-0.5" />
+                    Modifier
+                    <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold text-zinc-400 mb-1">Nom complet</label>
+                <input
+                  type="text"
+                  value={profile.name}
+                  onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                  required
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-xs text-white outline-none focus:border-orange-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold text-zinc-400 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={profile.email}
+                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                  required
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-xs text-white outline-none focus:border-orange-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold text-zinc-400 mb-1">Téléphone</label>
+                <input
+                  type="text"
+                  value={profile.phone}
+                  onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-xs text-white outline-none focus:border-orange-500"
+                />
+              </div>
+
+              <div className="pt-2 flex flex-col gap-2">
+                <button
+                  type="submit"
+                  disabled={profileLoading}
+                  className="w-full bg-orange-600 hover:bg-orange-500 text-white font-semibold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition"
+                >
+                  <Save className="w-4 h-4" /> {profileLoading ? 'Enregistrement...' : 'Enregistrer les modifications'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-full bg-rose-600/10 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 font-semibold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer transition"
+                >
+                  <LogOut className="w-4 h-4" /> Se déconnecter
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Transaction Dépôt / Retrait */}
       {activeModal !== 'none' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-3">
           <div className="bg-zinc-900 border border-zinc-800 text-white w-full max-w-sm rounded-2xl shadow-2xl p-4 space-y-3">
