@@ -43,6 +43,7 @@ export default function MessagesPage() {
   const [newMessage, setNewMessage] = useState('');
   
   const [activeBottomTab, setActiveBottomTab] = useState<'chats' | 'people'>('chats');
+  // Mode clair par défaut forcé à true
   const [isLightMode, setIsLightMode] = useState(true);
   const [pendingRequests, setPendingRequests] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -190,8 +191,6 @@ export default function MessagesPage() {
       if (data.success && Array.isArray(data.data)) {
         setMessages(data.data);
         localStorage.setItem(`cbfsoko_backup_${otherId}`, JSON.stringify(data.data));
-
-        // Mettre à jour le compteur non lu à 0 pour ce contact après lecture
         setAcceptedContacts(prev => prev.map(c => c.id === otherId ? { ...c, unreadCount: 0 } : c));
       }
     } catch {
@@ -352,20 +351,19 @@ export default function MessagesPage() {
   }
 
   const currentUserAvatarUrl = getAvatarUrl(userAvatar);
-
-  // Calculer uniquement le nombre total de messages non lus réels à travers toutes les conversations
   const totalUnreadMessages = acceptedContacts.reduce((sum, contact) => sum + (contact.unreadCount || 0), 0);
 
   return (
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${isLightMode ? 'bg-slate-100 text-slate-900' : 'bg-zinc-950 text-zinc-100'}`}>
       
-      {/* En-tête supérieur opaque (fond plein white / zinc-900) */}
-      <header className={`border px-4 lg:px-8 py-4 sticky top-0 z-50 transition-colors duration-200 ${
+      {/* En-tête supérieur opaque */}
+      <header className={`border px-4 lg:px-8 py-3.5 sticky top-0 z-50 transition-colors duration-200 ${
         isLightMode ? 'border-slate-200 bg-white shadow-sm' : 'border-zinc-800 bg-zinc-900 shadow-md'
       }`}>
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 w-full">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-orange-500/10 border-2 border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-base overflow-hidden relative shadow-sm">
+            {/* Taille d'avatar modérée et équilibrée */}
+            <div className="w-10 h-10 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-sm overflow-hidden relative shadow-sm">
               {currentUserAvatarUrl ? (
                 <img 
                   src={currentUserAvatarUrl} 
@@ -375,44 +373,44 @@ export default function MessagesPage() {
                 />
               ) : (
                 <span className="font-bold text-orange-500">
-                  {userName ? userName.charAt(0).toUpperCase() : <UserIcon className="w-6 h-6" />}
+                  {userName ? userName.charAt(0).toUpperCase() : <UserIcon className="w-5 h-5" />}
                 </span>
               )}
             </div>
-            <h1 className={`text-xl sm:text-2xl font-black tracking-tight ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>Chats</h1>
+            <h1 className={`text-lg sm:text-xl font-black tracking-tight ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>Chats</h1>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={handleOpenSupportChat}
-              className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-center ${
+              className={`p-2.5 rounded-xl border transition cursor-pointer flex items-center justify-center ${
                 isLightMode ? 'bg-white text-orange-600 border-slate-200 hover:bg-orange-50' : 'bg-zinc-900 text-orange-400 border-zinc-800 hover:bg-zinc-800'
               }`}
               title="Support Client"
             >
-              <Headphones className="w-5 h-5" />
+              <Headphones className="w-4 h-4" />
             </button>
 
             <button
               onClick={() => setIsLightMode(!isLightMode)}
-              className={`p-3 rounded-xl text-xs font-bold transition cursor-pointer border ${
+              className={`p-2.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
                 isLightMode ? 'bg-white text-amber-500 border-slate-200 hover:bg-slate-50' : 'bg-zinc-900 text-amber-400 border-zinc-800 hover:bg-zinc-800'
               }`}
             >
-              {isLightMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5 text-amber-400" />}
+              {isLightMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-amber-400" />}
             </button>
 
-            <Link to="/" className={`p-3 rounded-xl border transition ${
+            <Link to="/" className={`p-2.5 rounded-xl border transition ${
               isLightMode ? 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50' : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:bg-zinc-800'
             }`}>
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4" />
             </Link>
 
             <button
               onClick={handleLogout}
-              className="p-3 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-600 hover:text-white transition cursor-pointer border border-rose-500/20"
+              className="p-2.5 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-600 hover:text-white transition cursor-pointer border border-rose-500/20"
             >
-              <LogOut className="w-5 h-5" />
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -421,15 +419,15 @@ export default function MessagesPage() {
       <main className="max-w-7xl w-full mx-auto p-3 sm:p-6 lg:p-8 flex-1 flex flex-col pb-24">
         
         {error && (
-          <div className="mb-4 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-sm flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-sm flex items-center gap-3">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span className="font-semibold">{error}</span>
           </div>
         )}
 
         {successMsg && (
-          <div className="mb-4 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-sm flex items-center gap-3">
-            <CheckCircle className="w-5 h-5 flex-shrink-0" />
+          <div className="mb-4 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-sm flex items-center gap-3">
+            <CheckCircle className="w-4 h-4 flex-shrink-0" />
             <span className="font-semibold">{successMsg}</span>
           </div>
         )}
@@ -443,8 +441,8 @@ export default function MessagesPage() {
               isLightMode ? 'border-slate-200 bg-slate-50' : 'border-zinc-800 bg-zinc-900'
             }`}>
               
-              <div className="p-4 border-b border-slate-200 dark:border-zinc-800">
-                <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border ${
+              <div className="p-3.5 border-b border-slate-200 dark:border-zinc-800">
+                <div className={`flex items-center gap-3 px-3.5 py-2.5 rounded-2xl border ${
                   isLightMode ? 'bg-white border-slate-300' : 'bg-zinc-950 border-zinc-700'
                 }`}>
                   <Search className={`w-4 h-4 ${isLightMode ? 'text-slate-400' : 'text-zinc-400'}`} />
@@ -470,6 +468,7 @@ export default function MessagesPage() {
                       const isSelected = selectedContact?.id === contact.id;
                       const avatarUrl = getAvatarUrl(contact.avatar);
                       const online = isUserOnline(contact.updatedAt);
+                      const hasUnread = (contact.unreadCount || 0) > 0;
                       return (
                         <div
                           key={contact.id}
@@ -478,13 +477,13 @@ export default function MessagesPage() {
                             setShowMobileChat(true);
                             fetchMessages(contact.id, false);
                           }}
-                          className={`p-4 sm:p-5 flex items-center gap-4 cursor-pointer transition ${
+                          className={`p-3.5 sm:p-4 flex items-center gap-3.5 cursor-pointer transition ${
                             isSelected 
                               ? isLightMode ? 'bg-orange-50 border-l-4 border-orange-600' : 'bg-orange-500/15 border-l-4 border-orange-500'
                               : isLightMode ? 'hover:bg-slate-100' : 'hover:bg-zinc-800/80'
                           }`}
                         >
-                          <div className="w-14 h-14 rounded-full bg-orange-500/10 border-2 border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-base flex-shrink-0 overflow-hidden relative shadow-xs">
+                          <div className="w-11 h-11 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-sm flex-shrink-0 overflow-hidden relative shadow-xs">
                             {avatarUrl ? (
                               <img 
                                 src={avatarUrl} 
@@ -494,19 +493,21 @@ export default function MessagesPage() {
                               />
                             ) : (
                               <span className="absolute inset-0 flex items-center justify-center font-bold text-orange-500">
-                                {contact.name ? contact.name.charAt(0).toUpperCase() : <UserIcon className="w-6 h-6" />}
+                                {contact.name ? contact.name.charAt(0).toUpperCase() : <UserIcon className="w-5 h-5" />}
                               </span>
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className={`text-sm sm:text-base font-bold truncate ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>{contact.name}</p>
-                            <p className={`text-xs sm:text-sm truncate mt-0.5 ${isLightMode ? 'text-slate-600' : 'text-zinc-300'}`}>{contact.email}</p>
+                            <div className="flex items-center justify-between">
+                              <p className={`text-sm font-bold truncate ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>{contact.name}</p>
+                              {hasUnread && (
+                                <span className="w-2.5 h-2.5 bg-orange-600 rounded-full flex-shrink-0 ml-2"></span>
+                              )}
+                            </div>
+                            <p className={`text-xs truncate mt-0.5 ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>{contact.email}</p>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <span className={`w-3 h-3 rounded-full ${online ? 'bg-emerald-500 ring-2 ring-emerald-500/20' : 'bg-slate-300 dark:bg-zinc-700'}`}></span>
-                            <span className={`text-xs font-semibold hidden sm:inline ${online ? 'text-emerald-600 dark:text-emerald-400' : isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>
-                              {online ? 'En ligne' : 'Hors ligne'}
-                            </span>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <span className={`w-2.5 h-2.5 rounded-full ${online ? 'bg-emerald-500 ring-2 ring-emerald-500/20' : 'bg-slate-300 dark:bg-zinc-700'}`}></span>
                           </div>
                         </div>
                       );
@@ -518,15 +519,15 @@ export default function MessagesPage() {
             <div className={`md:col-span-8 flex flex-col h-[550px] md:h-auto ${!showMobileChat ? 'hidden md:flex' : 'flex'}`}>
               {selectedContact ? (
                 <>
-                  <div className={`p-4 sm:p-5 border-b flex items-center justify-between ${isLightMode ? 'border-slate-200 bg-white' : 'border-zinc-800 bg-zinc-900'}`}>
-                    <div className="flex items-center gap-4">
+                  <div className={`p-3.5 sm:p-4 border-b flex items-center justify-between ${isLightMode ? 'border-slate-200 bg-white' : 'border-zinc-800 bg-zinc-900'}`}>
+                    <div className="flex items-center gap-3">
                       <button 
                         onClick={() => setShowMobileChat(false)}
-                        className="md:hidden p-2.5 rounded-xl text-orange-500 hover:bg-orange-500/10 transition"
+                        className="md:hidden p-2 rounded-xl text-orange-500 hover:bg-orange-500/10 transition"
                       >
-                        <ArrowLeft className="w-6 h-6" />
+                        <ArrowLeft className="w-5 h-5" />
                       </button>
-                      <div className="w-12 h-12 rounded-full bg-orange-500/10 border-2 border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-base flex-shrink-0 overflow-hidden relative">
+                      <div className="w-10 h-10 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-sm flex-shrink-0 overflow-hidden relative">
                         {selectedContact.avatar ? (
                           <img 
                             src={getAvatarUrl(selectedContact.avatar)} 
@@ -535,11 +536,11 @@ export default function MessagesPage() {
                             onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} 
                           />
                         ) : (
-                          selectedContact.name ? selectedContact.name.charAt(0).toUpperCase() : <UserIcon className="w-6 h-6" />
+                          selectedContact.name ? selectedContact.name.charAt(0).toUpperCase() : <UserIcon className="w-5 h-5" />
                         )}
                       </div>
                       <div>
-                        <h3 className={`text-base sm:text-lg font-bold ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>
+                        <h3 className={`text-sm sm:text-base font-bold ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>
                           {selectedContact.name}
                         </h3>
                         <span className={`text-xs font-medium ${isUserOnline(selectedContact.updatedAt) ? 'text-emerald-500' : isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>
@@ -549,18 +550,18 @@ export default function MessagesPage() {
                     </div>
                   </div>
 
-                  <div className={`flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 ${isLightMode ? 'bg-slate-100' : 'bg-zinc-950'}`}>
+                  <div className={`flex-1 p-4 sm:p-6 overflow-y-auto space-y-3.5 ${isLightMode ? 'bg-slate-100' : 'bg-zinc-950'}`}>
                     {messages.length === 0 ? (
                       <div className="h-full flex flex-col items-center justify-center text-center p-6">
-                        <MessageCircle className={`w-12 h-12 mb-3 ${isLightMode ? 'text-slate-400' : 'text-zinc-600'}`} />
-                        <p className={`text-sm font-medium ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>Aucun message pour le moment.</p>
+                        <MessageCircle className={`w-10 h-10 mb-2.5 ${isLightMode ? 'text-slate-400' : 'text-zinc-600'}`} />
+                        <p className={`text-xs font-medium ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>Aucun message pour le moment.</p>
                       </div>
                     ) : (
                       messages.map((msg) => {
                         const isMe = msg.senderId === currentUserId;
                         return (
                           <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                            <div className={`max-w-[85%] sm:max-w-[75%] px-4 sm:px-5 py-3 rounded-2xl text-sm sm:text-base shadow-xs ${
+                            <div className={`max-w-[85%] sm:max-w-[75%] px-3.5 py-2.5 rounded-2xl text-xs sm:text-sm shadow-xs ${
                               isMe 
                                 ? 'bg-orange-600 text-white font-medium rounded-br-xs' 
                                 : isLightMode 
@@ -569,7 +570,7 @@ export default function MessagesPage() {
                             }`}>
                               <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                             </div>
-                            <span className={`text-xs mt-1.5 px-1 font-medium ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>
+                            <span className={`text-[10px] mt-1 px-1 font-medium ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>
                               {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
@@ -579,57 +580,57 @@ export default function MessagesPage() {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  <form onSubmit={handleSendMessage} className={`p-4 sm:p-5 border-t flex items-center gap-3 ${isLightMode ? 'border-slate-200 bg-white' : 'border-zinc-800 bg-zinc-900'}`}>
+                  <form onSubmit={handleSendMessage} className={`p-3.5 sm:p-4 border-t flex items-center gap-2.5 ${isLightMode ? 'border-slate-200 bg-white' : 'border-zinc-800 bg-zinc-900'}`}>
                     <input
                       type="text"
                       placeholder="Votre message..."
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
-                      className={`flex-1 text-sm sm:text-base px-5 py-3.5 rounded-2xl border outline-none transition ${
+                      className={`flex-1 text-xs sm:text-sm px-4 py-3 rounded-2xl border outline-none transition ${
                         isLightMode ? 'bg-slate-50 border-slate-300 text-slate-900 focus:border-orange-600' : 'bg-zinc-950 border-zinc-700 text-zinc-100 focus:border-orange-500'
                       }`}
                     />
                     <button
                       type="submit"
                       disabled={!newMessage.trim()}
-                      className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white p-3.5 rounded-2xl transition cursor-pointer shadow-md shadow-orange-600/20 flex items-center justify-center"
+                      className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white p-3 rounded-2xl transition cursor-pointer shadow-md shadow-orange-600/20 flex items-center justify-center"
                     >
-                      <Send className="w-5 h-5" />
+                      <Send className="w-4 h-4" />
                     </button>
                   </form>
                 </>
               ) : (
                 <div className="flex-1 hidden md:flex flex-col items-center justify-center p-6 text-center">
-                  <Inbox className={`w-14 h-14 mb-3 ${isLightMode ? 'text-slate-400' : 'text-zinc-600'}`} />
-                  <p className={`text-sm font-semibold ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>Sélectionnez une discussion.</p>
+                  <Inbox className={`w-12 h-12 mb-2.5 ${isLightMode ? 'text-slate-400' : 'text-zinc-600'}`} />
+                  <p className={`text-xs font-semibold ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>Sélectionnez une discussion.</p>
                 </div>
               )}
             </div>
           </div>
         ) : (
-          <div className={`border rounded-3xl p-4 sm:p-8 flex-1 shadow-sm ${isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'}`}>
+          <div className={`border rounded-3xl p-4 sm:p-6 flex-1 shadow-sm ${isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'}`}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
               <div>
-                <h2 className={`text-lg sm:text-xl font-bold ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>Ajouter des amis</h2>
-                <p className={`text-xs sm:text-sm mt-1 font-medium ${isLightMode ? 'text-slate-600' : 'text-zinc-300'}`}>
+                <h2 className={`text-base sm:text-lg font-bold ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>Ajouter des amis</h2>
+                <p className={`text-xs mt-0.5 font-medium ${isLightMode ? 'text-slate-600' : 'text-zinc-300'}`}>
                   Vous avez déjà <span className="font-bold text-orange-600 dark:text-orange-500">{acceptedContacts.length}</span> ami{acceptedContacts.length > 1 ? 's' : ''} en contact.
                 </p>
               </div>
-              <div className="relative w-full sm:w-80">
-                <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 ${isLightMode ? 'text-slate-400' : 'text-zinc-400'}`} />
+              <div className="relative w-full sm:w-72">
+                <Search className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 ${isLightMode ? 'text-slate-400' : 'text-zinc-400'}`} />
                 <input
                   type="text"
                   placeholder="Rechercher des membres..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`w-full text-sm pl-11 pr-4 py-3 rounded-2xl border outline-none transition ${
+                  className={`w-full text-xs sm:text-sm pl-10 pr-3.5 py-2.5 rounded-2xl border outline-none transition ${
                     isLightMode ? 'bg-slate-50 border-slate-300 text-slate-900 focus:border-orange-600' : 'bg-zinc-950 border-zinc-700 text-zinc-100 focus:border-orange-500'
                   }`}
                 />
               </div>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {availableUsers
                 .filter(user => user.name?.toLowerCase().includes(searchQuery.toLowerCase()) || user.email?.toLowerCase().includes(searchQuery.toLowerCase()))
                 .map((user) => {
@@ -637,9 +638,9 @@ export default function MessagesPage() {
                   const isPending = pendingRequests.includes(user.id) || user.contactStatus === 'PENDING';
                   const avatarUrl = getAvatarUrl(user.avatar);
                   return (
-                    <div key={user.id} className={`p-4 sm:p-5 border rounded-2xl flex items-center justify-between gap-4 ${isLightMode ? 'border-slate-200 bg-slate-50' : 'border-zinc-800 bg-zinc-950'}`}>
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        <div className="w-12 h-12 rounded-full bg-orange-500/10 border-2 border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-sm flex-shrink-0 overflow-hidden relative">
+                    <div key={user.id} className={`p-3.5 border rounded-2xl flex items-center justify-between gap-3 ${isLightMode ? 'border-slate-200 bg-slate-50' : 'border-zinc-800 bg-zinc-950'}`}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-xs flex-shrink-0 overflow-hidden relative">
                           {avatarUrl ? (
                             <img 
                               src={avatarUrl} 
@@ -648,26 +649,26 @@ export default function MessagesPage() {
                               onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} 
                             />
                           ) : (
-                            user.name ? user.name.charAt(0).toUpperCase() : <UserIcon className="w-5 h-5" />
+                            user.name ? user.name.charAt(0).toUpperCase() : <UserIcon className="w-4 h-4" />
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className={`text-sm sm:text-base font-bold truncate ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>{user.name}</p>
-                          <p className={`text-xs sm:text-sm truncate mt-0.5 ${isLightMode ? 'text-slate-600' : 'text-zinc-300'}`}>{user.email}</p>
+                          <p className={`text-xs sm:text-sm font-bold truncate ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>{user.name}</p>
+                          <p className={`text-[11px] truncate mt-0.5 ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>{user.email}</p>
                         </div>
                       </div>
                       
                       {isContact ? (
-                        <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl">Amis</span>
+                        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-xl">Amis</span>
                       ) : isPending ? (
-                        <span className="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-xl">En attente</span>
+                        <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-xl">En attente</span>
                       ) : (
                         <button
                           onClick={() => handleSendContactRequest(user.id)}
-                          className="bg-orange-600 hover:bg-orange-500 text-white p-3 rounded-xl transition cursor-pointer shadow-sm flex items-center justify-center"
+                          className="bg-orange-600 hover:bg-orange-500 text-white p-2.5 rounded-xl transition cursor-pointer shadow-sm flex items-center justify-center"
                           title="Ajouter comme ami"
                         >
-                          <UserPlus className="w-5 h-5" />
+                          <UserPlus className="w-4 h-4" />
                         </button>
                       )}
                     </div>
@@ -678,21 +679,21 @@ export default function MessagesPage() {
         )}
       </main>
 
-      {/* Barre de navigation inférieure fixe opaque (fond plein white / zinc-900 sans transparence) */}
-      <nav className={`fixed bottom-0 left-0 right-0 border-t py-3 px-6 z-50 flex items-center justify-around transition-colors duration-200 ${
+      {/* Barre de navigation inférieure fixe opaque avec icônes bien visibles et bien contrastées (blanc ou teintes adaptées) */}
+      <nav className={`fixed bottom-0 left-0 right-0 border-t py-2.5 px-6 z-50 flex items-center justify-around transition-colors duration-200 ${
         isLightMode ? 'border-slate-200 bg-white shadow-xl' : 'border-zinc-800 bg-zinc-900 shadow-xl shadow-black/80'
       }`}>
         <button
           onClick={() => { setActiveBottomTab('chats'); setShowMobileChat(false); }}
-          className={`relative p-3 rounded-2xl flex flex-col items-center gap-1 transition cursor-pointer ${
-            activeBottomTab === 'chats' ? 'text-orange-600 dark:text-orange-500 font-bold' : isLightMode ? 'text-slate-500 hover:text-slate-800' : 'text-zinc-400 hover:text-zinc-200'
+          className={`relative p-2.5 rounded-2xl flex flex-col items-center gap-0.5 transition cursor-pointer ${
+            activeBottomTab === 'chats' ? 'text-orange-600 dark:text-orange-500 font-bold' : isLightMode ? 'text-slate-600 hover:text-slate-900' : 'text-zinc-300 hover:text-white'
           }`}
           title="Discussions"
         >
-          <MessageCircle className="w-7 h-7" />
-          <span className="text-xs font-bold">Chats</span>
+          <MessageCircle className="w-5 h-5" />
+          <span className="text-[11px] font-bold">Chats</span>
           {totalUnreadMessages > 0 && (
-            <span className="absolute top-1 right-2 w-5 h-5 bg-orange-600 text-white font-black text-xs rounded-full flex items-center justify-center shadow-xs">
+            <span className="absolute top-1 right-2 w-4 h-4 bg-orange-600 text-white font-black text-[10px] rounded-full flex items-center justify-center shadow-xs">
               {totalUnreadMessages}
             </span>
           )}
@@ -700,24 +701,24 @@ export default function MessagesPage() {
 
         <button
           onClick={() => setActiveBottomTab('people')}
-          className={`p-3 rounded-2xl flex flex-col items-center gap-1 transition cursor-pointer ${
-            activeBottomTab === 'people' ? 'text-orange-600 dark:text-orange-500 font-bold' : isLightMode ? 'text-slate-500 hover:text-slate-800' : 'text-zinc-400 hover:text-zinc-200'
+          className={`p-2.5 rounded-2xl flex flex-col items-center gap-0.5 transition cursor-pointer ${
+            activeBottomTab === 'people' ? 'text-orange-600 dark:text-orange-500 font-bold' : isLightMode ? 'text-slate-600 hover:text-slate-900' : 'text-zinc-300 hover:text-white'
           }`}
           title="Ajouter des amis"
         >
-          <UserPlus className="w-7 h-7" />
-          <span className="text-xs font-bold">Amis</span>
+          <UserPlus className="w-5 h-5" />
+          <span className="text-[11px] font-bold">Amis</span>
         </button>
 
         <Link
           to="/"
-          className={`p-3 rounded-2xl flex flex-col items-center gap-1 transition cursor-pointer ${
-            isLightMode ? 'text-slate-500 hover:text-slate-800' : 'text-zinc-400 hover:text-zinc-200'
+          className={`p-2.5 rounded-2xl flex flex-col items-center gap-0.5 transition cursor-pointer ${
+            isLightMode ? 'text-slate-600 hover:text-slate-900' : 'text-zinc-300 hover:text-white'
           }`}
           title="Accueil"
         >
-          <Home className="w-7 h-7" />
-          <span className="text-xs font-bold">Accueil</span>
+          <Home className="w-5 h-5" />
+          <span className="text-[11px] font-bold">Accueil</span>
         </Link>
       </nav>
 

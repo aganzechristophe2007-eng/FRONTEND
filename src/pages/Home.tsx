@@ -344,7 +344,7 @@ export default function Home() {
       
       {/* Historique & Origine */}
       <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
-        <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <div className="w-14 h-14 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
           <History className="w-4 h-4" />
         </div>
         <div>
@@ -357,7 +357,7 @@ export default function Home() {
 
       {/* Vision & Créateurs */}
       <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
-        <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <div className="w-14 h-14 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
           <Target className="w-4 h-4" />
         </div>
         <div>
@@ -370,7 +370,7 @@ export default function Home() {
 
       {/* Services & Multidevises */}
       <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
-        <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <div className="w-14 h-14 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
           <Store className="w-4 h-4" />
         </div>
         <div>
@@ -383,7 +383,7 @@ export default function Home() {
 
       {/* Sécurité, Livraison & Garantie */}
       <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
-        <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <div className="w-14 h-14 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
           <ShieldCheck className="w-4 h-4" />
         </div>
         <div>
@@ -396,7 +396,7 @@ export default function Home() {
 
       {/* Support 7j/7 */}
       <div className="flex items-start gap-3">
-        <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <div className="w-14 h-14 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
           <Headphones className="w-4 h-4" />
         </div>
         <div>
@@ -479,7 +479,7 @@ export default function Home() {
                 }`}>
                   <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-700/50">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-orange-600 text-white flex items-center justify-center font-bold">
+                      <div className="w-14 h-14 rounded-lg bg-orange-600 text-white flex items-center justify-center font-bold">
                         <Sparkles className="w-3.5 h-3.5" />
                       </div>
                       <h4 className="font-extrabold text-xs text-orange-500">Histoire, Créateurs & Services</h4>
@@ -719,7 +719,7 @@ export default function Home() {
             Aucun produit disponible pour le moment. Soyez le premier à en poster un !
           </div>
         ) : (
-          <div className="grid grid-cols-4 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-6 gap-1.5 sm:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
             {featuredProducts.map((product, index) => {
               const productId = product.id || product._id;
               const prodTitle = product.title || 'Article';
