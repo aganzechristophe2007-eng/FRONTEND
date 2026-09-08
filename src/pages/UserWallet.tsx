@@ -1,7 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { X, User as UserIcon, Home, ArrowDownLeft, ArrowUpRight, CheckCircle, Wallet, TrendingUp, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { ResponsiveContainer, AreaChart, XAxis, YAxis, Tooltip, Area } from 'recharts';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 interface Transaction {
   id: string;
@@ -142,7 +164,53 @@ export default function UserWallet() {
   }
 
   const metrics = statsData?.metrics;
-  const chartData = statsData?.chartData || [];
+  const rawChartData = statsData?.chartData || [];
+
+  const chartData = {
+    labels: rawChartData.map((item: any) => item.date),
+    datasets: [
+      {
+        fill: true,
+        label: 'Montant ($)',
+        data: rawChartData.map((item: any) => item.total_montant),
+        borderColor: '#10b981',
+        backgroundColor: 'rgba(16, 185, 129, 0.15)',
+        borderWidth: 2,
+        tension: 0.3,
+        pointRadius: 2,
+      },
+    ],
+  };
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: false,
+      },
+      tooltip: {
+        backgroundColor: '#18181b',
+        borderColor: '#27272a',
+        borderWidth: 1,
+        titleFont: { size: 11 },
+        bodyFont: { size: 11 },
+        callbacks: {
+          label: (context: any) => ` Montant: $${context.raw}`,
+        }
+      },
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: { color: '#737373', font: { size: 10 } }
+      },
+      y: {
+        grid: { color: '#27272a', lineWidth: 0.5 },
+        ticks: { color: '#737373', font: { size: 10 } }
+      }
+    }
+  };
 
   return (
     <div className="space-y-4 max-w-4xl mx-auto relative p-3 sm:p-6 pb-24 bg-zinc-950 text-zinc-100 min-h-screen font-sans text-xs sm:text-sm">
@@ -187,15 +255,8 @@ export default function UserWallet() {
           <span className="flex items-center gap-1 text-emerald-400 font-semibold"><span className="w-2 h-2 bg-emerald-500 rounded-full"></span> Entrées</span>
           <span className="flex items-center gap-1 text-rose-400 font-semibold"><span className="w-2 h-2 bg-rose-500 rounded-full"></span> Sorties</span>
         </div>
-        <div className="h-56 sm:h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData}>
-              <XAxis dataKey="date" stroke="#737373" fontSize={10} tickLine={false} />
-              <YAxis stroke="#737373" fontSize={10} tickLine={false} />
-              <Tooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '10px', fontSize: '11px', color: '#fff' }} />
-              <Area type="monotone" dataKey="total_montant" stroke="#10b981" strokeWidth={2} fill="#10b981" fillOpacity={0.15} name="Montant ($)" />
-            </AreaChart>
-          </ResponsiveContainer>
+        <div className="h-56 sm:h-64 w-full relative">
+          <Line data={chartData} options={chartOptions} />
         </div>
       </div>
 
