@@ -28,9 +28,14 @@ jobs:
           npm install -D @capacitor/cli @capacitor/android
           npm run build
 
-      - name: Init Capacitor Config
+      - name: Create Capacitor Config
         run: |
-          npx cap init CBFSOKO com.soko.app --web-dir dist --yes
+          echo '{
+            "appId": "com.soko.app",
+            "appName": "CBFSOKO",
+            "webDir": "dist",
+            "bundledWebRuntime": false
+          }' > capacitor.config.json
 
       - name: Add and Sync Capacitor Android
         run: |
