@@ -22,34 +22,29 @@ jobs:
         with:
           node-version: '22'
 
-      # ON SE PLACE DIRECTEMENT DANS LE DOSSIER FRONTEND POUR TOUTES LES COMMANDES DE BUILD
       - name: Install Project Dependencies
         run: npm install
-        working-directory: ./frontend
 
       - name: Build Vite Frontend
         run: npm run build
-        working-directory: ./frontend
 
       - name: Sync Capacitor Android
         run: npx cap sync android
-        working-directory: ./frontend
 
       - name: Force Copy Web Assets
         run: |
           mkdir -p android/app/src/main/assets/public
           rm -rf android/app/src/main/assets/public/*
           cp -r dist/* android/app/src/main/assets/public/
-        working-directory: ./frontend
 
       - name: Build APK with Gradle
         run: |
+          cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
-        working-directory: ./frontend/android
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
