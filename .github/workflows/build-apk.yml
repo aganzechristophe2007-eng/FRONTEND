@@ -28,23 +28,10 @@ jobs:
       - name: Build Vite Frontend
         run: npm run build
 
-      - name: Sync Capacitor Android
-        run: npx cap sync android
-
-      - name: Force Copy Web Assets (Auto-detect & Secure)
+      - name: Add Capacitor Android Platform Dynamically
         run: |
-          mkdir -p android/app/src/main/assets/public
-          rm -rf android/app/src/main/assets/public/*
-          if [ -d "dist" ]; then
-            cp -r dist/* android/app/src/main/assets/public/
-            echo "Dossier dist copié avec succès."
-          elif [ -d "build" ]; then
-            cp -r build/* android/app/src/main/assets/public/
-            echo "Dossier build copié avec succès."
-          else
-            echo "ERREUR CRITIQUE : Aucun dossier de build (dist ou build) n'a été trouvé !"
-            exit 1
-          fi
+          npx cap add android --force
+          npx cap sync android
 
       - name: Build APK with Gradle
         run: |
