@@ -3,12 +3,12 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import Home from './pages/Home';
 import Products from './pages/Products';
-import ProductDetails from './pages/ProductDetail'; // Import indispensable pour la page de détails
+import ProductDetails from './pages/ProductDetail'; 
 import Login from './pages/Login';
 import Register from './pages/register';
 import CreateProduct from './pages/CreateProduct';
 import Orders from './pages/Orders';
-import Messages from './pages/Messages';
+import MessagingPage from "./pages/Messages";
 import Notifications from './pages/Notifications';
 import FullUserWallet from './pages/UserWallet';
 import UpdateProfile from './pages/UpdateProfile';
@@ -30,11 +30,11 @@ export default function App() {
         <Route path="/accueil" element={<Home />} />
         <Route path="/update-profile" element={<UpdateProfile />} />
         <Route path="/products" element={<Products />} />
-        <Route path="/products/:id" element={<ProductDetails />} /> {/* Route dynamique activée */}
+        <Route path="/products/:id" element={<ProductDetails />} />
         <Route path="/create-product" element={<CreateProduct />} />
         <Route path="/orders" element={<Orders />} />
-        <Route path="/messages" element={<Messages />} />
-        <Route path="/notifications" element={<Notifications />} />
+        <Route path="/messages" element={<MessagingPage />} />
+        <Route path="/notifications" element={<Notifications isLightMode={false} />} />
         <Route path="/wallet" element={<FullUserWallet />} />
 
         {/* Routes Administration & Finances protégées */}

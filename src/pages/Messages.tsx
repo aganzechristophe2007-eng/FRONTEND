@@ -42,11 +42,11 @@ interface Conversation {
   isVerified?: boolean;
 }
 
-interface MessagingPageProps {
-  onBackToHome?: () => void; // Prop optionnelle pour gérer le retour si ta structure l'utilise, ou redirection directe par défaut
+interface MessageProps {
+  onBackToHome?: () => void;
 }
 
-export function MessagingPage({ onBackToHome }: MessagingPageProps) {
+export function Message({ onBackToHome }: MessageProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'friends' | 'support'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -471,13 +471,12 @@ export function MessagingPage({ onBackToHome }: MessagingPageProps) {
       <aside className="w-84 border-r border-zinc-800/80 flex flex-col bg-zinc-900/30">
         <div className="p-4 border-b border-zinc-800/80 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            {/* Bouton Retour à l'accueil Pro */}
             <button 
               onClick={() => {
                 if (onBackToHome) {
                   onBackToHome();
                 } else {
-                  window.location.href = '/'; // Redirection par défaut vers la racine
+                  window.location.href = '/';
                 }
               }}
               className="p-2.5 rounded-xl bg-zinc-800/80 hover:bg-orange-600 hover:text-white text-zinc-300 transition flex items-center justify-center cursor-pointer border border-zinc-700/50 shadow-sm group"
@@ -688,10 +687,12 @@ export function MessagingPage({ onBackToHome }: MessagingPageProps) {
               <MessageCircle className="w-9 h-9 stroke-[1.5]" />
             </div>
             <h3 className="text-base font-bold text-zinc-200 mb-1">Centre de messagerie</h3>
-            <p className="text-xs max-w-sm text-zinc-400">Sélectionnez une discussion dans la barre latérale pour échanger en direct, passer des appels ou envoyer des messages vocaux.</p>
+            <p className="text-xs max-w-sm text-zinc-400">Sélectionnez une discussion dans la barre latérale pour échanger en direct, passer des appels ou envoyer des médias.</p>
           </div>
         )}
       </main>
     </div>
   );
 }
+
+export default Message;
