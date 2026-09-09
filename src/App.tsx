@@ -8,7 +8,7 @@ import Login from './pages/Login';
 import Register from './pages/register';
 import CreateProduct from './pages/CreateProduct';
 import Orders from './pages/Orders';
-import { MessagingPage } from './pages/Messages';
+import MessagingPage from "./pages/Messages";
 import Notifications from './pages/Notifications';
 import FullUserWallet from './pages/UserWallet';
 import UpdateProfile from './pages/UpdateProfile';
