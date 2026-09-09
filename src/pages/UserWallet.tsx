@@ -111,17 +111,22 @@ export default function UserWallet() {
     setProfileLoading(true);
     setProfileMsg(null);
     try {
+      // On envoie uniquement le nom, le téléphone et l'avatar (l'email est exclu pour empêcher sa modification)
       const response = await fetch('https://cbfsoko-backend.onrender.com/api/users/profile', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(profile)
+        body: JSON.stringify({
+          name: profile.name,
+          phone: profile.phone,
+          avatar: profile.avatar
+        })
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        setProfileMsg({ type: 'success', text: 'Profil mis à jour avec succès !' });
+        setProfileMsg({ type: 'success', text: 'Profil mis à jour et synchronisé !' });
         setTimeout(() => setIsEditingProfile(false), 1500);
       } else {
         setProfileMsg({ type: 'error', text: data.message || 'Erreur lors de la mise à jour.' });
@@ -337,7 +342,7 @@ export default function UserWallet() {
         </button>
       </nav>
 
-      {/* Modal Profile, édition et déconnexion */}
+      {/* Modal Profile, édition (Email bloqué) et déconnexion */}
       {isEditingProfile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-3">
           <div className="bg-zinc-900 border border-zinc-800 text-white w-full max-w-md rounded-2xl shadow-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -384,13 +389,12 @@ export default function UserWallet() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-semibold text-zinc-400 mb-1">Email</label>
+                <label className="block text-[10px] font-semibold text-zinc-400 mb-1">Email (Modifications interdites)</label>
                 <input
                   type="email"
                   value={profile.email}
-                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                  required
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-xs text-white outline-none focus:border-orange-500"
+                  disabled
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-2.5 text-xs text-zinc-500 cursor-not-allowed outline-none"
                 />
               </div>
 
