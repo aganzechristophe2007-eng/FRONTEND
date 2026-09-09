@@ -28,17 +28,53 @@ export default function Login() {
   const [searchParams] = useSearchParams();
   const redirectUrl = searchParams.get('redirect') || '/';
 
-  // Capture et traitement du token renvoyé par Google OAuth dans l'URL
+  // Fonction centralisée pour gérer la redirection selon le rôle utilisateur (Email ou Google)
+  const handleRoleRedirection = (userObj: any, userEmail: string) => {
+    localStorage.setItem('user', JSON.stringify(userObj));
+
+    let userRole = userObj?.role ? userObj.role.toUpperCase() : 'USER';
+    const cleanEmail = userEmail.trim().toLowerCase();
+
+    // Rôles forcés par email si nécessaire
+    if (cleanEmail === 'benjaminkulimushi1@gmail.com') userRole = 'ADMIN';
+    else if (cleanEmail === 'mambofelicien91@gmail.com') userRole = 'ADMIN_FINANCE';
+
+    if (userRole === 'SUPER_ADMIN') {
+      window.location.href = '/admin/dashboard';
+    } else if (userRole === 'ADMIN') {
+      window.location.href = '/admin/seller-dashboard';
+    } else if (userRole === 'ADMIN_FINANCE') {
+      window.location.href = '/admin/finances-dashboard';
+    } else {
+      navigate(redirectUrl === '/' ? '/' : redirectUrl, { replace: true });
+    }
+  };
+
+  // Capture et traitement du token renvoyé par Google OAuth dans l'URL + Gestion du rôle admin
   useEffect(() => {
     const urlToken = searchParams.get('token');
     const urlUser = searchParams.get('user');
+    const urlError = searchParams.get('error');
+
+    // Si le backend renvoie une erreur (ex: compte déjà existant / conflit)
+    if (urlError) {
+      setError(decodeURIComponent(urlError));
+      setShakeKey(prev => prev + 1);
+      return;
+    }
 
     if (urlToken) {
       localStorage.setItem('token', urlToken);
       if (urlUser) {
-        localStorage.setItem('user', decodeURIComponent(urlUser));
+        try {
+          const parsedUser = JSON.parse(decodeURIComponent(urlUser));
+          handleRoleRedirection(parsedUser, parsedUser.email || '');
+        } catch (e) {
+          navigate(redirectUrl, { replace: true });
+        }
+      } else {
+        navigate(redirectUrl, { replace: true });
       }
-      navigate(redirectUrl === '/' ? '/' : redirectUrl, { replace: true });
     }
   }, [searchParams, navigate, redirectUrl]);
 
@@ -50,7 +86,9 @@ export default function Login() {
   ];
 
   const handleSocialLogin = (provider: 'google' | 'facebook') => {
-    window.location.href = `https://cbfsoko-backend.onrender.com/api/auth/${provider}`;
+    // On passe le paramètre isFirstTime au backend pour qu'il sache s'il doit créer ou refuser si existant
+    const mode = isFirstTime ? 'register' : 'login';
+    window.location.href = `https://cbfsoko-backend.onrender.com/api/auth/${provider}?mode=${mode}`;
   };
 
   const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
@@ -142,24 +180,10 @@ export default function Login() {
       }
 
       localStorage.setItem('token', result.token);
-      localStorage.setItem('user', JSON.stringify(result.data || result.user));
-
       const userObj = result.data || result.user;
-      let userRole = userObj?.role ? userObj.role.toUpperCase() : 'USER';
-      
-      const cleanEmail = email.trim().toLowerCase();
-      if (cleanEmail === 'benjaminkulimushi1@gmail.com') userRole = 'ADMIN';
-      else if (cleanEmail === 'mambofelicien91@gmail.com') userRole = 'ADMIN_FINANCE';
 
-      if (userRole === 'SUPER_ADMIN') {
-        window.location.href = '/admin/dashboard';
-      } else if (userRole === 'ADMIN') {
-        window.location.href = '/admin/seller-dashboard';
-      } else if (userRole === 'ADMIN_FINANCE') {
-        window.location.href = '/admin/finances-dashboard';
-      } else {
-        navigate(redirectUrl === '/' ? '/' : redirectUrl, { replace: true });
-      }
+      // Redirection unifiée avec gestion des rôles administrateurs
+      handleRoleRedirection(userObj, email);
 
     } catch (err: any) {
       setError(err.message || 'Une erreur est survenue.');
