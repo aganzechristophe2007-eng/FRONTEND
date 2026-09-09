@@ -85,7 +85,6 @@ export function MessagingPage() {
     const currentUserId = localStorage.getItem('userId'); 
     if (!token) return;
 
-    // Connexion au serveur Socket.io (adapter l'URL si nécessaire en prod)
     const socket = io('http://localhost:5000');
     socketRef.current = socket;
 
@@ -93,7 +92,6 @@ export function MessagingPage() {
       socket.emit('register', currentUserId);
     }
 
-    // Écouter les appels entrants
     socket.on('incoming-call', async (data) => {
       setActiveCall(data.isVideo ? 'video' : 'audio');
 
@@ -197,7 +195,7 @@ export function MessagingPage() {
     fetchMessages();
   }, [selectedConversation]);
 
-  // --- GESTION DES APPELS WEBRTC (EMISSION) ---
+  // --- GESTION DES APPELS WEBRTC ---
   const startCall = async (type: 'audio' | 'video') => {
     setActiveCall(type);
     if (!selectedConversation || !socketRef.current) return;
@@ -262,7 +260,7 @@ export function MessagingPage() {
     cleanupCall();
   };
 
-  // --- GESTION DES MESSAGES VOCAUX (MEDIA RECORDER) ---
+  // --- GESTION DES MESSAGES VOCAUX ---
   const startAudioRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -305,7 +303,6 @@ export function MessagingPage() {
     }
   };
 
-  // Envoyer un message
   const handleSendMessage = async (e?: React.FormEvent, customType: 'text' | 'image' | 'video' | 'audio' = 'text', content?: string, mediaUrl?: string) => {
     if (e) e.preventDefault();
     const textToSend = content !== undefined ? content : newMessage;
@@ -353,7 +350,6 @@ export function MessagingPage() {
     }
   };
 
-  // Ajouter un contact / ami
   const handleAddFriendSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!friendIdentifier.trim()) return;
@@ -396,11 +392,9 @@ export function MessagingPage() {
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden relative selection:bg-orange-500 selection:text-white">
       
-      {/* ================= MODAL APPEL AUDIO / VIDÉO EN PLEIN ÉCRAN ================= */}
+      {/* ================= MODAL APPEL AUDIO / VIDÉO ================= */}
       {activeCall && selectedConversation && (
         <div className="absolute inset-0 z-50 bg-zinc-950/98 backdrop-blur-xl flex flex-col items-center justify-between p-6 md:p-10 animate-in fade-in duration-200">
-          
-          {/* En-tête de l'appel */}
           <div className="flex flex-col items-center gap-2 mt-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center font-bold text-xl shadow-lg shadow-orange-600/20">
               {selectedConversation.name.substring(0, 2).toUpperCase()}
@@ -412,18 +406,13 @@ export function MessagingPage() {
             </div>
           </div>
 
-          {/* Écran des flux média WebRTC */}
           <div className="w-full max-w-4xl flex-1 my-6 bg-zinc-900/80 border border-zinc-800/80 rounded-3xl flex items-center justify-center relative overflow-hidden shadow-2xl">
-            {/* Flux distant (Grand écran) */}
             <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover bg-zinc-950" />
-            
-            {/* Si aucun flux distant n'arrive encore, afficher un indicateur pro */}
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none -z-10 text-zinc-600">
               <Sparkles className="w-12 h-12 mb-2 animate-pulse text-orange-500/30" />
               <p className="text-xs font-medium">Établissement de la connexion pair-à-pair...</p>
             </div>
 
-            {/* Votre propre flux vidéo local (Picture-in-Picture) */}
             {activeCall === 'video' && (
               <div className="absolute bottom-6 right-6 w-44 h-32 bg-zinc-950 border border-zinc-700/60 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-md">
                 <video ref={localVideoRef} autoPlay playsInline muted className={`w-full h-full object-cover ${isCameraOff ? 'hidden' : ''}`} />
@@ -437,9 +426,7 @@ export function MessagingPage() {
             )}
           </div>
 
-          {/* Barre d'contrôles de l'appel */}
           <div className="flex items-center gap-5 mb-2 bg-zinc-900/90 border border-zinc-800 px-8 py-4 rounded-full shadow-2xl backdrop-blur-md">
-            {/* Micro Mute / Unmute */}
             <button 
               onClick={() => {
                 if (localStreamRef.current) {
@@ -454,7 +441,6 @@ export function MessagingPage() {
               <Mic className={`w-5 h-5 ${isCallMuted ? 'opacity-80' : ''}`} />
             </button>
 
-            {/* Caméra On / Off (Uniquement en appel vidéo) */}
             {activeCall === 'video' && (
               <button 
                 onClick={() => {
@@ -471,7 +457,6 @@ export function MessagingPage() {
               </button>
             )}
 
-            {/* Raccrocher */}
             <button 
               onClick={endCall} 
               className="p-4 rounded-full bg-red-600 hover:bg-red-500 text-white transition cursor-pointer shadow-xl shadow-red-600/30 scale-105 active:scale-95"
@@ -483,7 +468,7 @@ export function MessagingPage() {
         </div>
       )}
 
-      {/* ================= BARRE LATÉRALE DES CONVERSATIONS ================= */}
+      {/* ================= BARRE LATÉRALE ================= */}
       <aside className="w-84 border-r border-zinc-800/80 flex flex-col bg-zinc-900/30">
         <div className="p-4 border-b border-zinc-800/80 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -501,7 +486,6 @@ export function MessagingPage() {
           </button>
         </div>
 
-        {/* Formulaire d'ajout d'ami */}
         {isAddFriendOpen && (
           <div className="p-3.5 bg-zinc-900/90 border-b border-zinc-800 animate-in slide-in-from-top-2 duration-150">
             <form onSubmit={handleAddFriendSubmit} className="flex flex-col gap-2">
@@ -537,13 +521,34 @@ export function MessagingPage() {
 
         <div className="flex px-3 gap-1.5 mb-2">
           <button onClick={() => setActiveTab('all')} className={`flex-1 py-2 text-xs font-semibold rounded-xl transition cursor-pointer ${activeTab === 'all' ? 'bg-orange-600/15 text-orange-400 border border-orange-500/20' : 'text-zinc-400 hover:bg-zinc-900'}`}>Tous</button>
-          <button onClick={() => setActiveTab('friends')} className={`flex-1 py-2 text-xs font-semibold rounded-xl transition cursor-pointer ${activeTab === 'friends' ? 'bg-orange-600/15 text-orange-400 border border-orange-500/20' : 'text-zinc-400 hover:bg-zinc-900'}`}>Amis</button>
+          
+          {/* Onglet Amis / Annuaire avec indicateur de chargement à 3 points si requis */}
+          <button onClick={() => setActiveTab('friends')} className={`flex-1 py-2 text-xs font-semibold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${activeTab === 'friends' ? 'bg-orange-600/15 text-orange-400 border border-orange-500/20' : 'text-zinc-400 hover:bg-zinc-900'}`}>
+            <span>Amis</span>
+            {loadingConversations && activeTab === 'friends' && (
+              <span className="flex items-center gap-0.5 ml-0.5">
+                <span className="w-1 h-1 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                <span className="w-1 h-1 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                <span className="w-1 h-1 bg-orange-500 rounded-full animate-bounce"></span>
+              </span>
+            )}
+          </button>
+
           <button onClick={() => setActiveTab('support')} className={`flex-1 py-2 text-xs font-semibold rounded-xl transition cursor-pointer ${activeTab === 'support' ? 'bg-orange-600/15 text-orange-400 border border-orange-500/20' : 'text-zinc-400 hover:bg-zinc-900'}`}>Support</button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 space-y-1 custom-scrollbar pb-4">
           {loadingConversations ? (
-            <div className="text-center py-10 text-xs text-zinc-500 animate-pulse">Chargement des conversations...</div>
+            <div className="flex flex-col items-center justify-center py-12 text-zinc-500 gap-2">
+              <div className="flex items-center gap-1.5 py-2 px-4 rounded-full bg-zinc-900 border border-zinc-800 shadow-inner">
+                <span className="text-xs font-medium text-orange-400">Recherche des contacts</span>
+                <span className="flex items-center gap-1 ml-1">
+                  <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                  <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                  <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce"></span>
+                </span>
+              </div>
+            </div>
           ) : filteredConversations.length === 0 ? (
             <div className="text-center py-10 text-xs text-zinc-500 px-4">Aucune conversation trouvée. Ajoutez un contact pour commencer.</div>
           ) : (
@@ -572,11 +577,10 @@ export function MessagingPage() {
         </div>
       </aside>
 
-      {/* ================= ZONE DE DISCUSSION PRINCIPALE ================= */}
+      {/* ================= ZONE DE DISCUSSION ================= */}
       <main className="flex-1 flex flex-col bg-zinc-950">
         {selectedConversation ? (
           <>
-            {/* Header de la conversation */}
             <header className="px-6 py-4 border-b border-zinc-800/80 flex items-center justify-between bg-zinc-900/30 backdrop-blur-md">
               <div className="flex items-center gap-3.5">
                 <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm ${selectedConversation.type === 'support' ? 'bg-orange-600/20 text-orange-500 border border-orange-500/30' : 'bg-zinc-800 text-zinc-200'}`}>
@@ -594,20 +598,11 @@ export function MessagingPage() {
                 </div>
               </div>
 
-              {/* Boutons d'appels réels */}
               <div className="flex items-center gap-1.5 text-zinc-400">
-                <button 
-                  onClick={() => startCall('audio')} 
-                  className="p-2.5 hover:bg-zinc-800 rounded-xl transition cursor-pointer hover:text-zinc-200" 
-                  title="Démarrer un appel audio"
-                >
+                <button onClick={() => startCall('audio')} className="p-2.5 hover:bg-zinc-800 rounded-xl transition cursor-pointer hover:text-zinc-200" title="Démarrer un appel audio">
                   <Phone className="w-4 h-4" />
                 </button>
-                <button 
-                  onClick={() => startCall('video')} 
-                  className="p-2.5 hover:bg-zinc-800 rounded-xl transition cursor-pointer hover:text-zinc-200" 
-                  title="Démarrer un appel vidéo"
-                >
+                <button onClick={() => startCall('video')} className="p-2.5 hover:bg-zinc-800 rounded-xl transition cursor-pointer hover:text-zinc-200" title="Démarrer un appel vidéo">
                   <Video className="w-4 h-4" />
                 </button>
                 <div className="w-px h-5 bg-zinc-800 mx-1"></div>
@@ -617,7 +612,6 @@ export function MessagingPage() {
               </div>
             </header>
 
-            {/* Liste des messages */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
               {loadingMessages ? (
                 <div className="text-center py-10 text-xs text-zinc-500 animate-pulse">Chargement des messages...</div>
@@ -629,7 +623,7 @@ export function MessagingPage() {
                       <div className={`max-w-md rounded-2xl px-4 py-3 text-xs leading-relaxed shadow-sm ${isMe ? 'bg-orange-600 text-white rounded-br-none shadow-orange-600/10' : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-bl-none'}`}>
                         {msg.type === 'image' && msg.mediaUrl && (
                           <div className="mb-2 rounded-xl overflow-hidden bg-zinc-950 border border-zinc-800">
-                            <img src={msg.mediaUrl} alt="Média partagé" className="w-full h-48 object-cover" />
+                            <img src={msg.mediaUrl} alt="Média" className="w-full h-48 object-cover" />
                           </div>
                         )}
                         {msg.type === 'video' && msg.mediaUrl && (
@@ -651,34 +645,17 @@ export function MessagingPage() {
               )}
             </div>
 
-            {/* Champs de fichiers cachés */}
             <input type="file" ref={fileInputRef} onChange={(e) => handleFileUpload(e, 'image')} accept="image/*" className="hidden" />
             <input type="file" ref={videoInputRef} onChange={(e) => handleFileUpload(e, 'video')} accept="video/*" className="hidden" />
 
-            {/* Barre d'envoi de messages */}
             <form onSubmit={(e) => handleSendMessage(e, 'text')} className="p-4 border-t border-zinc-800/80 bg-zinc-900/30 flex items-center gap-2.5 backdrop-blur-md">
-              <button 
-                type="button" 
-                onClick={() => fileInputRef.current?.click()} 
-                className="p-3 rounded-2xl text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-200 transition cursor-pointer"
-                title="Envoyer une image"
-              >
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 rounded-2xl text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-200 transition cursor-pointer" title="Envoyer une image">
                 <ImageIcon className="w-5 h-5" />
               </button>
-              <button 
-                type="button" 
-                onClick={() => videoInputRef.current?.click()} 
-                className="p-3 rounded-2xl text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-200 transition cursor-pointer"
-                title="Envoyer une vidéo"
-              >
+              <button type="button" onClick={() => videoInputRef.current?.click()} className="p-3 rounded-2xl text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-200 transition cursor-pointer" title="Envoyer une vidéo">
                 <VideoIcon className="w-5 h-5" />
               </button>
-              <button 
-                type="button" 
-                onClick={toggleAudioRecording} 
-                className={`p-3 rounded-2xl transition cursor-pointer ${isRecordingAudio ? 'bg-red-600 text-white animate-pulse shadow-lg shadow-red-600/30' : 'text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-200'}`}
-                title={isRecordingAudio ? "Arrêter et envoyer le message vocal" : "Enregistrer un message vocal"}
-              >
+              <button type="button" onClick={toggleAudioRecording} className={`p-3 rounded-2xl transition cursor-pointer ${isRecordingAudio ? 'bg-red-600 text-white animate-pulse shadow-lg shadow-red-600/30' : 'text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-200'}`} title="Message vocal">
                 <Mic className="w-5 h-5" />
               </button>
 
@@ -690,11 +667,7 @@ export function MessagingPage() {
                 className="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-xs text-zinc-200 focus:outline-none focus:border-orange-500/60 transition shadow-inner"
               />
 
-              <button 
-                type="submit" 
-                disabled={!newMessage.trim()} 
-                className="p-3.5 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white transition disabled:opacity-40 cursor-pointer shadow-lg shadow-orange-600/20"
-              >
+              <button type="submit" disabled={!newMessage.trim()} className="p-3.5 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white transition disabled:opacity-40 cursor-pointer shadow-lg shadow-orange-600/20">
                 <Send className="w-4 h-4" />
               </button>
             </form>
