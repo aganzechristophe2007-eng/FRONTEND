@@ -28,10 +28,11 @@ jobs:
       - name: Build Vite Frontend
         run: npm run build
 
-      - name: Add and Sync Android Platform Dynamically
-        run: |
-          npx cap add android --force
-          npx cap sync android
+      - name: Add Android Platform
+        run: npx cap add android
+
+      - name: Sync Web Assets
+        run: npx cap sync android
 
       - name: Force Copy Web Assets (Double Security)
         run: |
