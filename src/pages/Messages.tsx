@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { io, Socket } from 'socket.io-client';
 import { 
   MessageCircle, 
   Send, 
@@ -9,12 +10,16 @@ import {
   Sun, 
   Moon, 
   ArrowLeft, 
-  MoreVertical, 
-  ShieldAlert,
   Users,
   Clock,
-  X
+  X,
+  Phone,
+  Video,
+  Image as ImageIcon
 } from 'lucide-react';
+
+// URL de votre backend (ajustez si nécessaire)
+const SOCKET_URL = 'http://localhost:5000';
 
 interface User {
   id: string;
@@ -46,6 +51,7 @@ export default function MessagingPage() {
   // États de l'utilisateur connecté
   const [currentUserId] = useState<string>(() => localStorage.getItem('userId') || 'user-1');
   const [userName] = useState<string>(() => localStorage.getItem('userName') || 'Utilisateur');
+  const [token] = useState<string>(() => localStorage.getItem('token') || '');
   
   // États d'interface
   const [isLightMode, setIsLightMode] = useState<boolean>(false);
@@ -61,30 +67,83 @@ export default function MessagingPage() {
   // Messages et saisie
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState<string>('');
+  const [uploading, setUploading] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Fonction utilitaire pour normaliser les URL des avatars
+  // États pour les appels WebRTC
+  const [inCall, setInCall] = useState<boolean>(false);
+  const [isVideoCall, setIsVideoCall] = useState<boolean>(false);
+  const [incomingCallData, setIncomingCallData] = useState<any>(null);
+
+  // Références Socket & WebRTC
+  const socketRef = useRef<Socket | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Configuration des serveurs STUN publics (Google) pour WebRTC
+  const rtcConfig = {
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  };
+
+  // Fonction utilitaire pour normaliser les URL des avatars ou médias
   const getAvatarUrl = (path?: string) => {
     if (!path) return null;
     if (path.startsWith('http')) return path;
-    return `http://localhost:5000/${path.replace(/^\/+/, '')}`;
+    return `${SOCKET_URL}/${path.replace(/^\/+/, '')}`;
   };
+
+  // 1. Initialisation de Socket.io et écoute des événements temps réel
+  useEffect(() => {
+    const socket = io(SOCKET_URL);
+    socketRef.current = socket;
+
+    socket.emit('register', currentUserId);
+
+    // Écoute des appels entrants
+    socket.on('incoming-call', async ({ from, offer, isVideo }) => {
+      setIncomingCallData({ from, offer, isVideo });
+    });
+
+    socket.on('call-answered', async ({ answer }) => {
+      if (peerConnectionRef.current) {
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+      }
+    });
+
+    socket.on('ice-candidate', async ({ candidate }) => {
+      if (peerConnectionRef.current && candidate) {
+        try {
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+          console.error("Erreur ajout ICE candidate", e);
+        }
+      }
+    });
+
+    socket.on('call-ended', () => {
+      stopCallCleanup();
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [currentUserId]);
 
   // Chargement initial des données et synchronisation (Polling global)
   useEffect(() => {
     const fetchAppData = async () => {
       try {
-        // Exemple d'appels API réels à adapter selon ton backend :
-        /*
         const [usersRes, contactsRes, requestsRes] = await Promise.all([
-          fetch('/api/users'),
-          fetch('/api/contacts/accepted'),
-          fetch('/api/contacts/requests')
+          fetch(`${SOCKET_URL}/api/users/available`),
+          fetch(`${SOCKET_URL}/api/contacts/accepted?userId=${currentUserId}`),
+          fetch(`${SOCKET_URL}/api/contacts/requests?userId=${currentUserId}`)
         ]);
+
         if (usersRes.ok) setAvailableUsers(await usersRes.json());
         if (contactsRes.ok) setAcceptedContacts(await contactsRes.json());
         if (requestsRes.ok) setPendingRequests(await requestsRes.json());
-        */
       } catch (err) {
         console.error("Erreur lors du chargement des données", err);
       }
@@ -93,7 +152,7 @@ export default function MessagingPage() {
     fetchAppData();
     const interval = setInterval(fetchAppData, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentUserId]);
 
   // Gestion du polling pour les messages du contact actif
   useEffect(() => {
@@ -101,11 +160,11 @@ export default function MessagingPage() {
 
     const fetchMessages = async () => {
       try {
-        // const res = await fetch(`/api/messages/${selectedContact.id}`);
-        // if (res.ok) {
-        //   const data = await res.json();
-        //   setMessages(data);
-        // }
+        const res = await fetch(`${SOCKET_URL}/api/messages/${currentUserId}/${selectedContact.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setMessages(data);
+        }
       } catch (err) {
         console.error("Erreur de synchronisation des messages", err);
       }
@@ -114,57 +173,178 @@ export default function MessagingPage() {
     fetchMessages();
     const interval = setInterval(fetchMessages, 3000);
     return () => clearInterval(interval);
-  }, [selectedContact]);
+  }, [selectedContact, currentUserId]);
 
   // Scroll automatique vers le bas lors d'un nouveau message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Envoyer un message
+  // Envoyer un message texte
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !selectedContact) return;
 
     const messagePayload = {
-      id: Date.now().toString(),
       senderId: currentUserId,
       receiverId: selectedContact.id,
       content: newMessage.trim(),
-      createdAt: new Date().toISOString(),
     };
 
-    // Mise à jour optimiste de l'UI
-    setMessages((prev) => [...prev, messagePayload]);
-    setNewMessage('');
-
     try {
-      /*
-      await fetch('/api/messages', {
+      const res = await fetch(`${SOCKET_URL}/api/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(messagePayload)
       });
-      */
+
+      if (res.ok) {
+        const savedMessage = await res.json();
+        setMessages((prev) => [...prev, savedMessage]);
+        setNewMessage('');
+      }
     } catch (err) {
       console.error("Erreur d'envoi du message", err);
     }
   };
 
+  // Envoyer un fichier média (Image, Vidéo, Audio)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedContact) return;
+
+    const formData = new FormData();
+    formData.append('media', file);
+    formData.append('receiverId', selectedContact.id);
+
+    setUploading(true);
+    try {
+      const res = await fetch(`${SOCKET_URL}/api/messages/media`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessages((prev) => [...prev, data.data]);
+      }
+    } catch (err) {
+      console.error("Erreur envoi média", err);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // --- LOGIQUE WEBRTC : Démarrer un appel sortant ---
+  const startCall = async (isVideo: boolean) => {
+    if (!selectedContact) return;
+    setIsVideoCall(isVideo);
+    setInCall(true);
+
+    const pc = new RTCPeerConnection(rtcConfig);
+    peerConnectionRef.current = pc;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      pc.ontrack = (event) => {
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && socketRef.current) {
+          socketRef.current.emit('ice-candidate', { to: selectedContact.id, candidate: event.candidate });
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socketRef.current?.emit('call-user', {
+        to: selectedContact.id,
+        from: currentUserId,
+        offer,
+        isVideo
+      });
+    } catch (err) {
+      console.error("Erreur accès médias (caméra/micro)", err);
+      stopCallCleanup();
+    }
+  };
+
+  // --- LOGIQUE WEBRTC : Accepter un appel entrant ---
+  const acceptCall = async () => {
+    if (!incomingCallData) return;
+    const { from, offer, isVideo } = incomingCallData;
+    setIsVideoCall(isVideo);
+    setInCall(true);
+    setIncomingCallData(null);
+
+    const pc = new RTCPeerConnection(rtcConfig);
+    peerConnectionRef.current = pc;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      pc.ontrack = (event) => {
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && socketRef.current) {
+          socketRef.current.emit('ice-candidate', { to: from, candidate: event.candidate });
+        }
+      };
+
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socketRef.current?.emit('make-answer', { to: from, answer });
+    } catch (err) {
+      console.error("Erreur acceptation appel", err);
+      stopCallCleanup();
+    }
+  };
+
+  const stopCallCleanup = () => {
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    setInCall(false);
+    setIncomingCallData(null);
+  };
+
+  const endCall = () => {
+    if (selectedContact && socketRef.current) {
+      socketRef.current.emit('end-call', { to: selectedContact.id });
+    }
+    stopCallCleanup();
+  };
+
   // Envoyer une demande de contact
   const handleSendContactRequest = async (userId: string) => {
     try {
-      /*
-      const res = await fetch('/api/contacts/request', {
+      const res = await fetch(`${SOCKET_URL}/api/contacts/request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ receiverId: userId })
+        body: JSON.stringify({ senderId: currentUserId, receiverId: userId })
       });
       if (res.ok) {
         alert("Demande de contact envoyée avec succès !");
+        const reqRes = await fetch(`${SOCKET_URL}/api/contacts/requests?userId=${currentUserId}`);
+        if (reqRes.ok) setPendingRequests(await reqRes.json());
       }
-      */
-     alert("Demande de contact envoyée avec succès !");
     } catch (err) {
       console.error("Erreur lors de l'envoi de la demande", err);
     }
@@ -173,15 +353,17 @@ export default function MessagingPage() {
   // Répondre à une demande de contact (Accepter / Rejeter)
   const handleRespondToRequest = async (requestId: string, status: 'accepted' | 'rejected') => {
     try {
-      /*
-      await fetch(`/api/contacts/request/${requestId}`, {
+      const res = await fetch(`${SOCKET_URL}/api/contacts/request/${requestId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
       });
-      */
-      // Mise à jour locale pour un retour immédiat
-      setPendingRequests(prev => prev.filter(req => req.id !== requestId));
+      
+      if (res.ok) {
+        setPendingRequests(prev => prev.filter(req => req.id !== requestId));
+        const contactsRes = await fetch(`${SOCKET_URL}/api/contacts/accepted?userId=${currentUserId}`);
+        if (contactsRes.ok) setAcceptedContacts(await contactsRes.json());
+      }
     } catch (err) {
       console.error("Erreur lors de la mise à jour de la requête", err);
     }
@@ -325,7 +507,6 @@ export default function MessagingPage() {
               })
             )
           ) : activeBottomTab === 'people' ? (
-            // Onglet Annuaire / Utilisateurs disponibles
             filteredUsers.map((user) => {
               const avatarUrl = getAvatarUrl(user.avatar);
               const isContact = acceptedContacts.some(c => c.id === user.id);
@@ -369,7 +550,6 @@ export default function MessagingPage() {
               );
             })
           ) : (
-            // Onglet Demandes de contact en attente
             pendingRequests.length === 0 ? (
               <div className="text-center py-12 text-zinc-500 text-xs">
                 Aucune demande de contact en attente.
@@ -424,7 +604,36 @@ export default function MessagingPage() {
       </aside>
 
       {/* ZONE DE DISCUSSION ACTIVE */}
-      <main className={`flex-1 flex flex-col h-full ${!selectedContact ? 'hidden md:flex' : 'flex'}`}>
+      <main className={`flex-1 flex flex-col h-full relative ${!selectedContact ? 'hidden md:flex' : 'flex'}`}>
+        
+        {/* MODALE D'APPEL EN COURS */}
+        {inCall && (
+          <div className="absolute inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4">
+            <div className="relative w-full max-w-4xl h-[70vh] bg-zinc-900 rounded-3xl overflow-hidden flex items-center justify-center border border-zinc-800">
+              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+              {isVideoCall && (
+                <video ref={localVideoRef} autoPlay playsInline muted className="absolute bottom-4 right-4 w-44 h-32 object-cover rounded-2xl border-2 border-orange-500 shadow-xl" />
+              )}
+            </div>
+            <button onClick={endCall} className="mt-6 px-8 py-3 bg-red-600 hover:bg-red-500 font-bold rounded-2xl transition cursor-pointer text-white">
+              Raccrocher
+            </button>
+          </div>
+        )}
+
+        {/* POPUP D'APPEL ENTRANT */}
+        {incomingCallData && !inCall && (
+          <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl text-center shadow-2xl">
+              <h3 className="text-xl font-bold mb-4 text-white">📞 Appel entrant...</h3>
+              <div className="flex gap-4 justify-center">
+                <button onClick={acceptCall} className="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-2xl font-bold transition text-white">Accepter</button>
+                <button onClick={() => setIncomingCallData(null)} className="px-6 py-3 bg-red-600 hover:bg-red-500 rounded-2xl font-bold transition text-white">Refuser</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {selectedContact ? (
           <>
             {/* Header du chat actif */}
@@ -451,6 +660,24 @@ export default function MessagingPage() {
                   </h3>
                   <span className="text-[10px] text-emerald-500 font-medium">En ligne</span>
                 </div>
+              </div>
+
+              {/* BOUTONS D'APPEL AUDIO & VIDÉO */}
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => startCall(false)} 
+                  className="p-2.5 bg-zinc-800/80 hover:bg-orange-500/20 text-orange-400 rounded-xl transition cursor-pointer"
+                  title="Appel audio"
+                >
+                  <Phone className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => startCall(true)} 
+                  className="p-2.5 bg-zinc-800/80 hover:bg-orange-500/20 text-orange-400 rounded-xl transition cursor-pointer"
+                  title="Appel vidéo"
+                >
+                  <Video className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
@@ -479,10 +706,28 @@ export default function MessagingPage() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Barre de saisie de message */}
+            {/* Barre de saisie de message et médias */}
             <form onSubmit={handleSendMessage} className={`p-4 border-t flex items-center gap-3 ${
               isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'
             }`}>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileUpload} 
+                accept="image/*,video/*,audio/*" 
+                className="hidden" 
+              />
+              
+              <button 
+                type="button" 
+                onClick={() => fileInputRef.current?.click()} 
+                disabled={uploading}
+                className="p-2.5 text-zinc-400 hover:text-orange-500 transition cursor-pointer"
+                title="Envoyer une photo, vidéo ou audio"
+              >
+                <ImageIcon className="w-5 h-5" />
+              </button>
+
               <input
                 type="text"
                 placeholder="Écrivez votre message..."
@@ -496,7 +741,7 @@ export default function MessagingPage() {
               />
               <button
                 type="submit"
-                disabled={!newMessage.trim()}
+                disabled={!newMessage.trim() || uploading}
                 className="p-3 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white transition disabled:opacity-50 cursor-pointer shadow-lg shadow-orange-600/20"
               >
                 <Send className="w-4 h-4" />
@@ -515,7 +760,7 @@ export default function MessagingPage() {
       </main>
 
       {/* Barre de navigation mobile inférieure */}
-      <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t flex items-center justify-around p-2 z-50 backdrop-blur-md ${
+      <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t flex items-center justify-around p-2 z-40 backdrop-blur-md ${
         isLightMode ? 'bg-white/90 border-slate-200' : 'bg-zinc-900/90 border-zinc-800'
       }`}>
         <button
