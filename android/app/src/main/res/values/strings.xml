@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">CBFSOKO</string>
-    <string name="title_activity_main">CBFSOKO</string>
-    <string name="package_name">com.soko.app</string>
-    <string name="custom_url_scheme">com.soko.app</string>
-</resources>
