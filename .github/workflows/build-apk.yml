@@ -28,17 +28,21 @@ jobs:
       - name: Build Vite Frontend
         run: npm run build
 
+      - name: Debug - Check Dist Folder
+        run: |
+          echo "=== FICHIERS DANS DIST ==="
+          ls -la dist/
+
       - name: Add Android Platform
         run: npx cap add android
 
-      - name: Sync Web Assets
-        run: npx cap sync android
-
-      - name: Force Copy Web Assets (Double Security)
+      - name: Force Copy Dist to Android Assets
         run: |
-          mkdir -p android/app/src/main/assets/public
+          echo "=== NETTOYAGE ET COPIE FORCEE ==="
           rm -rf android/app/src/main/assets/public/*
           cp -r dist/* android/app/src/main/assets/public/
+          echo "=== VERIFICATION DU DOSSIER ANDROID ASSETS ==="
+          ls -la android/app/src/main/assets/public/
 
       - name: Build APK with Gradle
         run: |
