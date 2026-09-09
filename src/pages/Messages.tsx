@@ -14,7 +14,8 @@ import {
   Mic,
   PhoneOff,
   Radio,
-  Sparkles
+  Sparkles,
+  Home
 } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 
@@ -41,7 +42,11 @@ interface Conversation {
   isVerified?: boolean;
 }
 
-export function MessagingPage() {
+interface MessagingPageProps {
+  onBackToHome?: () => void; // Prop optionnelle pour gérer le retour si ta structure l'utilise, ou redirection directe par défaut
+}
+
+export function MessagingPage({ onBackToHome }: MessagingPageProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'friends' | 'support'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -59,12 +64,10 @@ export function MessagingPage() {
   const [isCallMuted, setIsCallMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   
-  // Enregistrement vocal réel
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  // WebRTC & Socket.io Refs
   const socketRef = useRef<Socket | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -147,7 +150,6 @@ export function MessagingPage() {
     };
   }, []);
 
-  // Charger les conversations
   const fetchConversations = async () => {
     try {
       setLoadingConversations(true);
@@ -165,7 +167,6 @@ export function MessagingPage() {
     fetchConversations();
   }, []);
 
-  // Charger l'historique des messages
   useEffect(() => {
     if (!selectedConversation) return;
     const fetchMessages = async () => {
@@ -195,7 +196,6 @@ export function MessagingPage() {
     fetchMessages();
   }, [selectedConversation]);
 
-  // --- GESTION DES APPELS WEBRTC ---
   const startCall = async (type: 'audio' | 'video') => {
     setActiveCall(type);
     if (!selectedConversation || !socketRef.current) return;
@@ -260,7 +260,6 @@ export function MessagingPage() {
     cleanupCall();
   };
 
-  // --- GESTION DES MESSAGES VOCAUX ---
   const startAudioRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -472,11 +471,23 @@ export function MessagingPage() {
       <aside className="w-84 border-r border-zinc-800/80 flex flex-col bg-zinc-900/30">
         <div className="p-4 border-b border-zinc-800/80 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="p-2.5 rounded-2xl bg-orange-600/10 text-orange-500 border border-orange-500/20">
-              <MessageCircle className="w-5 h-5" />
-            </div>
+            {/* Bouton Retour à l'accueil Pro */}
+            <button 
+              onClick={() => {
+                if (onBackToHome) {
+                  onBackToHome();
+                } else {
+                  window.location.href = '/'; // Redirection par défaut vers la racine
+                }
+              }}
+              className="p-2.5 rounded-xl bg-zinc-800/80 hover:bg-orange-600 hover:text-white text-zinc-300 transition flex items-center justify-center cursor-pointer border border-zinc-700/50 shadow-sm group"
+              title="Retour à l'accueil"
+            >
+              <Home className="w-4 h-4 text-orange-500 group-hover:text-white transition" />
+            </button>
             <h1 className="font-bold text-base tracking-tight">Messages</h1>
           </div>
+          
           <button 
             onClick={() => setIsAddFriendOpen(!isAddFriendOpen)}
             className="px-3 py-2 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer border border-zinc-700/50 shadow-sm"
@@ -522,7 +533,6 @@ export function MessagingPage() {
         <div className="flex px-3 gap-1.5 mb-2">
           <button onClick={() => setActiveTab('all')} className={`flex-1 py-2 text-xs font-semibold rounded-xl transition cursor-pointer ${activeTab === 'all' ? 'bg-orange-600/15 text-orange-400 border border-orange-500/20' : 'text-zinc-400 hover:bg-zinc-900'}`}>Tous</button>
           
-          {/* Onglet Amis / Annuaire avec indicateur de chargement à 3 points si requis */}
           <button onClick={() => setActiveTab('friends')} className={`flex-1 py-2 text-xs font-semibold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${activeTab === 'friends' ? 'bg-orange-600/15 text-orange-400 border border-orange-500/20' : 'text-zinc-400 hover:bg-zinc-900'}`}>
             <span>Amis</span>
             {loadingConversations && activeTab === 'friends' && (
