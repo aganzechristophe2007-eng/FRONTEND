@@ -42,6 +42,11 @@ jobs:
           mkdir -p android/app/src/main/assets/public
           cp -r dist/* android/app/src/main/assets/public/
 
+      - name: Create Missing Cordova Variables File
+        run: |
+          mkdir -p android/capacitor-cordova-android-plugins
+          touch android/capacitor-cordova-android-plugins/cordova.variables.gradle
+
       - name: Fix Kotlin and Java Compatibility
         run: |
           echo "
