@@ -1109,7 +1109,7 @@ export default function MessagesPage() {
                         </button>
                       </div>
                     ) : (
-                      <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                      <form onSubmit={handleSendMessage} className={`p-3 border-t flex flex-wrap sm:flex-nowrap items-center gap-2 relative ${isLightMode ? 'border-slate-200 bg-white' : 'border-zinc-800 bg-zinc-900'}`}>
                         <input
                           type="file"
                           ref={fileInputRef}
