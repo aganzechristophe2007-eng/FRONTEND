@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { ArrowRight, ArrowLeft, Mail, Lock, User as UserIcon, Phone, Eye, EyeOff, CheckCircle, AlertCircle, Share2, Users, Search, HelpCircle } from 'lucide-react';
@@ -9,8 +9,6 @@ export default function Login() {
   const [isFirstTime, setIsFirstTime] = useState<boolean | null>(null);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [forgotStep, setForgotStep] = useState<'request' | 'verify' | 'reset'>('request');
-
-  const [pageLoading, setPageLoading] = useState(true);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -25,14 +23,6 @@ export default function Login() {
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
-
-  useEffect(() => {
-    const timerInit = setTimeout(() => {
-      setPageLoading(false);
-    }, 400);
-
-    return () => clearTimeout(timerInit);
-  }, []);
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -165,16 +155,6 @@ export default function Login() {
     }
   };
 
-  if (pageLoading) {
-    return (
-      <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-4">
-        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border border-neutral-800 bg-neutral-900 shadow-lg shadow-orange-600/20 flex items-center justify-center">
-          <img src="/logo.jpeg" alt="" className="w-full h-full object-cover" />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col justify-between px-5 py-6 sm:px-8 md:p-16 relative overflow-x-hidden">
       <div className="absolute w-[350px] md:w-[500px] h-[350px] md:h-[500px] bg-orange-600/10 rounded-full blur-[120px] pointer-events-none" />
@@ -216,8 +196,6 @@ export default function Login() {
         transition={{ duration: 0.5 }}
         className="max-w-xl w-full mx-auto z-10 my-auto py-4 flex flex-col items-center text-center"
       >
- 
-
         <div className="w-full text-left">
           {error && (
             <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-3">
@@ -234,7 +212,6 @@ export default function Login() {
           )}
 
           <AnimatePresence mode="wait">
-            
             {isForgotPassword ? (
               <motion.div key="forgot" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -15 }} className="space-y-5">
                 <h1 className="text-2xl sm:text-3xl md:text-5xl font-extrabold tracking-tight leading-tight">
@@ -506,7 +483,6 @@ export default function Login() {
                 )}
               </>
             )}
-
           </AnimatePresence>
         </div>
       </motion.div>
@@ -523,7 +499,6 @@ export default function Login() {
           </button>
         )}
       </div>
-
     </div>
   );
 }
