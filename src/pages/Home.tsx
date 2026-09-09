@@ -452,14 +452,19 @@ export default function Home() {
               <HelpCircle className="w-4 h-4" />
             </button>
 
-            {/* SUR MOBILE : Icône Caméra (remplace 'Vendre') placée à gauche de la recherche */}
-            <button 
-              onClick={() => handleProtectedAction('/create-product')}
-              className="sm:hidden p-2 rounded-xl bg-orange-600 text-white shadow-md shadow-orange-600/30 border border-orange-500 flex items-center justify-center cursor-pointer hover:bg-orange-700 transition"
-              title="Publier un article (Caméra)"
-            >
-              <Camera className="w-4 h-4" />
-            </button>
+            {/* SUR MOBILE : Icône Notification placée à gauche de la recherche */}
+        <button 
+          onClick={handleOpenNotifications}
+          className="sm:hidden p-2 rounded-xl bg-neutral-800 border border-neutral-700 text-orange-500 flex items-center justify-center cursor-pointer hover:bg-neutral-700 transition relative"
+          title="Notifications"
+        >
+          <Bell className="w-4 h-4" />
+          {unreadNotifsCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
+              {unreadNotifsCount}
+            </span>
+          )}
+        </button>
 
             {/* Menu Déroulant DESKTOP pour les services et l'historique complet */}
             <div className="relative hidden md:block">
