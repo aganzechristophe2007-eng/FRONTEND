@@ -28,9 +28,9 @@ jobs:
       - name: Build Vite Frontend
         run: npm run build
 
-      - name: Add Capacitor Android Platform Dynamically
+      - name: Add Android Platform Dynamically
         run: |
-          npx cap add android --force
+          npx cap add android
           npx cap sync android
 
       - name: Build APK with Gradle
