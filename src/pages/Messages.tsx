@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { useNavigate } from 'react-router-dom';
 import { 
   MessageCircle, 
   Send, 
@@ -15,7 +16,8 @@ import {
   X,
   Phone,
   Video,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Home
 } from 'lucide-react';
 
 // URL de votre backend (ajustez si nécessaire)
@@ -48,6 +50,8 @@ interface ContactRequest {
 }
 
 export default function MessagingPage() {
+  const navigate = useNavigate();
+
   // États de l'utilisateur connecté
   const [currentUserId] = useState<string>(() => localStorage.getItem('userId') || 'user-1');
   const [userName] = useState<string>(() => localStorage.getItem('userName') || 'Utilisateur');
@@ -369,9 +373,12 @@ export default function MessagingPage() {
     }
   };
 
-  // Filtrage des éléments selon la barre de recherche
+  // Filtrage des éléments selon la barre de recherche (on exclut l'utilisateur lui-même de l'onglet Ajout de membres)
   const filteredChats = acceptedContacts.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  const filteredUsers = availableUsers.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredUsers = availableUsers.filter(u => 
+    u.id !== currentUserId && 
+    (u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   return (
     <div className={`flex h-screen w-screen overflow-hidden font-sans transition-colors duration-300 ${
@@ -427,10 +434,10 @@ export default function MessagingPage() {
             />
           </div>
 
-          <div className="flex gap-1.5">
+          <div className="grid grid-cols-4 gap-1">
             <button
               onClick={() => setActiveBottomTab('chats')}
-              className={`flex-1 py-2 text-[11px] font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              className={`py-2 text-[10px] font-bold rounded-xl transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
                 activeBottomTab === 'chats'
                   ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
                   : isLightMode ? 'bg-slate-200 text-slate-600' : 'bg-zinc-800 text-zinc-400'
@@ -440,17 +447,17 @@ export default function MessagingPage() {
             </button>
             <button
               onClick={() => setActiveBottomTab('people')}
-              className={`flex-1 py-2 text-[11px] font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              className={`py-2 text-[10px] font-bold rounded-xl transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
                 activeBottomTab === 'people'
                   ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
                   : isLightMode ? 'bg-slate-200 text-slate-600' : 'bg-zinc-800 text-zinc-400'
               }`}
             >
-              <Users className="w-3.5 h-3.5" /> Annuaire
+              <Users className="w-3.5 h-3.5" /> Ajout membres
             </button>
             <button
               onClick={() => setActiveBottomTab('requests')}
-              className={`flex-1 py-2 text-[11px] font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 relative ${
+              className={`py-2 text-[10px] font-bold rounded-xl transition cursor-pointer flex flex-col items-center justify-center gap-1 relative ${
                 activeBottomTab === 'requests'
                   ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
                   : isLightMode ? 'bg-slate-200 text-slate-600' : 'bg-zinc-800 text-zinc-400'
@@ -463,6 +470,15 @@ export default function MessagingPage() {
                 </span>
               )}
             </button>
+            <button
+              onClick={() => navigate('/')}
+              className={`py-2 text-[10px] font-bold rounded-xl transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                isLightMode ? 'bg-slate-200 hover:bg-slate-300 text-slate-700' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
+              }`}
+              title="Retour à l'accueil"
+            >
+              <Home className="w-3.5 h-3.5" /> Accueil
+            </button>
           </div>
         </div>
 
@@ -471,7 +487,7 @@ export default function MessagingPage() {
           {activeBottomTab === 'chats' ? (
             filteredChats.length === 0 ? (
               <div className="text-center py-12 text-zinc-500 text-xs">
-                Aucune discussion active. Explorez l'annuaire pour ajouter des contacts.
+                Aucune discussion active. Explorez l'onglet "Ajout membres" pour ajouter des contacts.
               </div>
             ) : (
               filteredChats.map((contact) => {
@@ -754,48 +770,10 @@ export default function MessagingPage() {
               <MessageCircle className="w-8 h-8" />
             </div>
             <h3 className="text-sm font-bold text-zinc-300">Vos discussions</h3>
-            <p className="text-xs text-zinc-500 max-w-xs mt-1">Sélectionnez une conversation dans la liste de gauche ou trouvez un nouveau contact pour commencer à discuter.</p>
+            <p className="text-xs text-zinc-500 max-w-xs mt-1">Sélectionnez une conversation dans la liste de gauche ou trouvez un nouveau membre pour commencer à discuter.</p>
           </div>
         )}
       </main>
-
-      {/* Barre de navigation mobile inférieure */}
-      <nav className={`md:hidden fixed bottom-0 left-0 right-0 border-t flex items-center justify-around p-2 z-40 backdrop-blur-md ${
-        isLightMode ? 'bg-white/90 border-slate-200' : 'bg-zinc-900/90 border-zinc-800'
-      }`}>
-        <button
-          onClick={() => setActiveBottomTab('chats')}
-          className={`flex flex-col items-center gap-1 p-2 rounded-xl transition ${
-            activeBottomTab === 'chats' ? 'text-orange-500 font-bold' : isLightMode ? 'text-slate-500' : 'text-zinc-400'
-          }`}
-        >
-          <MessageCircle className="w-5 h-5" />
-          <span className="text-[10px]">Discussions</span>
-        </button>
-        <button
-          onClick={() => setActiveBottomTab('people')}
-          className={`flex flex-col items-center gap-1 p-2 rounded-xl transition ${
-            activeBottomTab === 'people' ? 'text-orange-500 font-bold' : isLightMode ? 'text-slate-500' : 'text-zinc-400'
-          }`}
-        >
-          <Users className="w-5 h-5" />
-          <span className="text-[10px]">Annuaire</span>
-        </button>
-        <button
-          onClick={() => setActiveBottomTab('requests')}
-          className={`flex flex-col items-center gap-1 p-2 rounded-xl transition relative ${
-            activeBottomTab === 'requests' ? 'text-orange-500 font-bold' : isLightMode ? 'text-slate-500' : 'text-zinc-400'
-          }`}
-        >
-          <Clock className="w-5 h-5" />
-          <span className="text-[10px]">Requêtes</span>
-          {pendingRequests.length > 0 && (
-            <span className="absolute top-1 right-2 bg-red-500 text-white text-[9px] w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold">
-              {pendingRequests.length}
-            </span>
-          )}
-        </button>
-      </nav>
     </div>
   );
 }
