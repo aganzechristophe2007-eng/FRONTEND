@@ -1,776 +1,711 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { io, Socket } from 'socket.io-client';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   MessageCircle, 
   Send, 
-  Search, 
   UserPlus, 
-  Check, 
-  CheckCheck, 
-  Sun, 
-  Moon, 
-  ArrowLeft, 
-  Users,
-  Clock,
-  X,
+  ShieldCheck, 
+  Search, 
+  CheckCircle2, 
   Phone,
   Video,
+  MoreVertical,
   Image as ImageIcon,
-  Home
+  Video as VideoIcon,
+  Mic,
+  PhoneOff,
+  Radio,
+  Sparkles
 } from 'lucide-react';
-
-// URL de votre backend (ajustez si nécessaire)
-const SOCKET_URL = 'http://localhost:5000';
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  avatar?: string;
-  role?: string;
-}
+import { io, Socket } from 'socket.io-client';
 
 interface Message {
   id: string;
   senderId: string;
   receiverId: string;
-  content: string;
+  text?: string;
+  type?: 'text' | 'image' | 'video' | 'audio';
+  mediaUrl?: string;
   createdAt: string;
-  read?: boolean;
+  timestamp?: string;
 }
 
-interface ContactRequest {
+interface Conversation {
   id: string;
-  senderId: string;
-  receiverId: string;
-  status: 'pending' | 'accepted' | 'rejected';
-  sender?: User;
-  receiver?: User;
+  name: string;
+  avatar?: string;
+  isOnline?: boolean;
+  unreadCount?: number;
+  lastMessage?: string;
+  type: 'friend' | 'support' | 'group';
+  isAdmin?: boolean;
+  isVerified?: boolean;
 }
 
-export default function MessagingPage() {
-  const navigate = useNavigate();
-
-  // États de l'utilisateur connecté
-  const [currentUserId] = useState<string>(() => localStorage.getItem('userId') || 'user-1');
-  const [userName] = useState<string>(() => localStorage.getItem('userName') || 'Utilisateur');
-  const [token] = useState<string>(() => localStorage.getItem('token') || '');
+export function MessagingPage() {
+  const [activeTab, setActiveTab] = useState<'all' | 'friends' | 'support'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [newMessage, setNewMessage] = useState('');
+  const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
+  const [friendIdentifier, setFriendIdentifier] = useState('');
   
-  // États d'interface
-  const [isLightMode, setIsLightMode] = useState<boolean>(false);
-  const [activeBottomTab, setActiveBottomTab] = useState<'chats' | 'people' | 'requests'>('chats');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  
-  // Données de l'application
-  const [availableUsers, setAvailableUsers] = useState<User[]>([]);
-  const [acceptedContacts, setAcceptedContacts] = useState<User[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<ContactRequest[]>([]);
-  const [selectedContact, setSelectedContact] = useState<User | null>(null);
-  
-  // Messages et saisie
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState<string>('');
-  const [uploading, setUploading] = useState<boolean>(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [messages, setMessages] = useState<Record<string, Message[]>>({});
+  const [loadingConversations, setLoadingConversations] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
 
-  // États pour les appels WebRTC
-  const [inCall, setInCall] = useState<boolean>(false);
-  const [isVideoCall, setIsVideoCall] = useState<boolean>(false);
-  const [incomingCallData, setIncomingCallData] = useState<any>(null);
+  // --- ÉTATS RÉELS POUR LES APPELS & AUDIO ---
+  const [activeCall, setActiveCall] = useState<'audio' | 'video' | null>(null);
+  const [isCallMuted, setIsCallMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
+  
+  // Enregistrement vocal réel
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
-  // Références Socket & WebRTC
+  // WebRTC & Socket.io Refs
   const socketRef = useRef<Socket | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
-  // Configuration des serveurs STUN publics (Google) pour WebRTC
-  const rtcConfig = {
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-  };
+  const getAuthHeaders = () => ({
+    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+    'Content-Type': 'application/json'
+  });
 
-  // Fonction utilitaire pour normaliser les URL des avatars ou médias
-  const getAvatarUrl = (path?: string) => {
-    if (!path) return null;
-    if (path.startsWith('http')) return path;
-    return `${SOCKET_URL}/${path.replace(/^\/+/, '')}`;
-  };
-
-  // 1. Initialisation de Socket.io et écoute des événements temps réel
+  // --- INITIALISATION SOCKET.IO & WEBRTC LISTENERS ---
   useEffect(() => {
-    const socket = io(SOCKET_URL);
+    const token = localStorage.getItem('token');
+    const currentUserId = localStorage.getItem('userId'); 
+    if (!token) return;
+
+    // Connexion au serveur Socket.io (adapter l'URL si nécessaire en prod)
+    const socket = io('http://localhost:5000');
     socketRef.current = socket;
 
-    socket.emit('register', currentUserId);
+    if (currentUserId) {
+      socket.emit('register', currentUserId);
+    }
 
-    // Écoute des appels entrants
-    socket.on('incoming-call', async ({ from, offer, isVideo }) => {
-      setIncomingCallData({ from, offer, isVideo });
-    });
+    // Écouter les appels entrants
+    socket.on('incoming-call', async (data) => {
+      setActiveCall(data.isVideo ? 'video' : 'audio');
 
-    socket.on('call-answered', async ({ answer }) => {
-      if (peerConnectionRef.current) {
-        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      peerConnectionRef.current = pc;
+
+      pc.ontrack = (event) => {
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('ice-candidate', { to: data.from, candidate: event.candidate });
+        }
+      };
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: data.isVideo, audio: true });
+        localStreamRef.current = stream;
+        if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        socket.emit('make-answer', { to: data.from, answer });
+      } catch (err) {
+        console.error("Erreur acceptation appel entrant :", err);
       }
     });
 
-    socket.on('ice-candidate', async ({ candidate }) => {
-      if (peerConnectionRef.current && candidate) {
-        try {
-          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch (e) {
-          console.error("Erreur ajout ICE candidate", e);
-        }
+    socket.on('call-answered', async (data) => {
+      if (peerConnectionRef.current) {
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer));
+      }
+    });
+
+    socket.on('ice-candidate', async (data) => {
+      if (peerConnectionRef.current && data.candidate) {
+        await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
       }
     });
 
     socket.on('call-ended', () => {
-      stopCallCleanup();
+      cleanupCall();
     });
 
     return () => {
       socket.disconnect();
     };
-  }, [currentUserId]);
+  }, []);
 
-  // Chargement initial des données et synchronisation (Polling global)
+  // Charger les conversations
+  const fetchConversations = async () => {
+    try {
+      setLoadingConversations(true);
+      const res = await fetch('/api/messages/conversations', { headers: getAuthHeaders() });
+      const data = await res.json();
+      if (data.success) setConversations(data.conversations);
+    } catch (err) {
+      console.error('Erreur chargement conversations:', err);
+    } finally {
+      setLoadingConversations(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchAppData = async () => {
-      try {
-        const [usersRes, contactsRes, requestsRes] = await Promise.all([
-          fetch(`${SOCKET_URL}/api/users/available`),
-          fetch(`${SOCKET_URL}/api/contacts/accepted?userId=${currentUserId}`),
-          fetch(`${SOCKET_URL}/api/contacts/requests?userId=${currentUserId}`)
-        ]);
+    fetchConversations();
+  }, []);
 
-        if (usersRes.ok) setAvailableUsers(await usersRes.json());
-        if (contactsRes.ok) setAcceptedContacts(await contactsRes.json());
-        if (requestsRes.ok) setPendingRequests(await requestsRes.json());
-      } catch (err) {
-        console.error("Erreur lors du chargement des données", err);
-      }
-    };
-
-    fetchAppData();
-    const interval = setInterval(fetchAppData, 5000);
-    return () => clearInterval(interval);
-  }, [currentUserId]);
-
-  // Gestion du polling pour les messages du contact actif
+  // Charger l'historique des messages
   useEffect(() => {
-    if (!selectedContact) return;
-
+    if (!selectedConversation) return;
     const fetchMessages = async () => {
       try {
-        const res = await fetch(`${SOCKET_URL}/api/messages/${currentUserId}/${selectedContact.id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setMessages(data);
+        setLoadingMessages(true);
+        const targetId = selectedConversation.type === 'support' 
+          ? selectedConversation.id.replace('support-', '') 
+          : selectedConversation.id;
+
+        const res = await fetch(`/api/messages/${targetId}`, { headers: getAuthHeaders() });
+        const data = await res.json();
+        if (data.success) {
+          setMessages(prev => ({
+            ...prev,
+            [selectedConversation.id]: data.data.map((m: any) => ({
+              ...m,
+              timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            }))
+          }));
         }
       } catch (err) {
-        console.error("Erreur de synchronisation des messages", err);
+        console.error('Erreur messages:', err);
+      } finally {
+        setLoadingMessages(false);
       }
     };
-
     fetchMessages();
-    const interval = setInterval(fetchMessages, 3000);
-    return () => clearInterval(interval);
-  }, [selectedContact, currentUserId]);
+  }, [selectedConversation]);
 
-  // Scroll automatique vers le bas lors d'un nouveau message
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Envoyer un message texte
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !selectedContact) return;
-
-    const messagePayload = {
-      senderId: currentUserId,
-      receiverId: selectedContact.id,
-      content: newMessage.trim(),
-    };
+  // --- GESTION DES APPELS WEBRTC (EMISSION) ---
+  const startCall = async (type: 'audio' | 'video') => {
+    setActiveCall(type);
+    if (!selectedConversation || !socketRef.current) return;
 
     try {
-      const res = await fetch(`${SOCKET_URL}/api/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(messagePayload)
-      });
-
-      if (res.ok) {
-        const savedMessage = await res.json();
-        setMessages((prev) => [...prev, savedMessage]);
-        setNewMessage('');
-      }
-    } catch (err) {
-      console.error("Erreur d'envoi du message", err);
-    }
-  };
-
-  // Envoyer un fichier média (Image, Vidéo, Audio)
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedContact) return;
-
-    const formData = new FormData();
-    formData.append('media', file);
-    formData.append('receiverId', selectedContact.id);
-
-    setUploading(true);
-    try {
-      const res = await fetch(`${SOCKET_URL}/api/messages/media`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
-      const data = await res.json();
-      if (data.success) {
-        setMessages((prev) => [...prev, data.data]);
-      }
-    } catch (err) {
-      console.error("Erreur envoi média", err);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  // --- LOGIQUE WEBRTC : Démarrer un appel sortant ---
-  const startCall = async (isVideo: boolean) => {
-    if (!selectedContact) return;
-    setIsVideoCall(isVideo);
-    setInCall(true);
-
-    const pc = new RTCPeerConnection(rtcConfig);
-    peerConnectionRef.current = pc;
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: type === 'video', audio: true });
+      localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      peerConnectionRef.current = pc;
 
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
       pc.ontrack = (event) => {
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
       };
 
       pc.onicecandidate = (event) => {
         if (event.candidate && socketRef.current) {
-          socketRef.current.emit('ice-candidate', { to: selectedContact.id, candidate: event.candidate });
+          socketRef.current.emit('ice-candidate', { to: selectedConversation.id, candidate: event.candidate });
         }
       };
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      socketRef.current?.emit('call-user', {
-        to: selectedContact.id,
-        from: currentUserId,
+      const currentUserId = localStorage.getItem('userId');
+      socketRef.current.emit('call-user', {
+        to: selectedConversation.id,
         offer,
-        isVideo
+        from: currentUserId,
+        isVideo: type === 'video'
       });
+
     } catch (err) {
-      console.error("Erreur accès médias (caméra/micro)", err);
-      stopCallCleanup();
+      console.error("Erreur démarrage appel:", err);
+      alert("Impossible d'accéder à la caméra ou au micro.");
+      setActiveCall(null);
     }
   };
 
-  // --- LOGIQUE WEBRTC : Accepter un appel entrant ---
-  const acceptCall = async () => {
-    if (!incomingCallData) return;
-    const { from, offer, isVideo } = incomingCallData;
-    setIsVideoCall(isVideo);
-    setInCall(true);
-    setIncomingCallData(null);
-
-    const pc = new RTCPeerConnection(rtcConfig);
-    peerConnectionRef.current = pc;
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-      pc.ontrack = (event) => {
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
-      };
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate && socketRef.current) {
-          socketRef.current.emit('ice-candidate', { to: from, candidate: event.candidate });
-        }
-      };
-
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      socketRef.current?.emit('make-answer', { to: from, answer });
-    } catch (err) {
-      console.error("Erreur acceptation appel", err);
-      stopCallCleanup();
+  const cleanupCall = () => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
     }
-  };
-
-  const stopCallCleanup = () => {
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
-    setInCall(false);
-    setIncomingCallData(null);
+    setActiveCall(null);
+    setIsCallMuted(false);
+    setIsCameraOff(false);
   };
 
   const endCall = () => {
-    if (selectedContact && socketRef.current) {
-      socketRef.current.emit('end-call', { to: selectedContact.id });
+    if (selectedConversation && socketRef.current) {
+      socketRef.current.emit('end-call', { to: selectedConversation.id });
     }
-    stopCallCleanup();
+    cleanupCall();
   };
 
-  // Envoyer une demande de contact
-  const handleSendContactRequest = async (userId: string) => {
+  // --- GESTION DES MESSAGES VOCAUX (MEDIA RECORDER) ---
+  const startAudioRecording = async () => {
     try {
-      const res = await fetch(`${SOCKET_URL}/api/contacts/request`, {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        handleSendMessage(undefined, 'audio', 'Message vocal', audioUrl);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecordingAudio(true);
+    } catch (err) {
+      console.error("Impossible d'enregistrer l'audio :", err);
+    }
+  };
+
+  const stopAudioRecording = () => {
+    if (mediaRecorderRef.current && isRecordingAudio) {
+      mediaRecorderRef.current.stop();
+      setIsRecordingAudio(false);
+    }
+  };
+
+  const toggleAudioRecording = () => {
+    if (!isRecordingAudio) {
+      startAudioRecording();
+    } else {
+      stopAudioRecording();
+    }
+  };
+
+  // Envoyer un message
+  const handleSendMessage = async (e?: React.FormEvent, customType: 'text' | 'image' | 'video' | 'audio' = 'text', content?: string, mediaUrl?: string) => {
+    if (e) e.preventDefault();
+    const textToSend = content !== undefined ? content : newMessage;
+    if ((!textToSend.trim() && !mediaUrl) || !selectedConversation) return;
+
+    const receiverId = selectedConversation.type === 'support' 
+      ? selectedConversation.id.replace('support-', '') 
+      : selectedConversation.id;
+
+    try {
+      const res = await fetch('/api/messages/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ senderId: currentUserId, receiverId: userId })
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          receiverId,
+          text: textToSend,
+          type: customType,
+          mediaUrl: mediaUrl || null
+        })
       });
-      if (res.ok) {
-        alert("Demande de contact envoyée avec succès !");
-        const reqRes = await fetch(`${SOCKET_URL}/api/contacts/requests?userId=${currentUserId}`);
-        if (reqRes.ok) setPendingRequests(await reqRes.json());
+
+      const data = await res.json();
+      if (data.success) {
+        const newMsg: Message = {
+          id: data.message.id,
+          senderId: data.message.senderId,
+          receiverId: data.message.receiverId,
+          text: data.message.text,
+          type: data.message.type,
+          mediaUrl: data.message.mediaUrl,
+          createdAt: data.message.createdAt,
+          timestamp: new Date(data.message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setMessages(prev => ({
+          ...prev,
+          [selectedConversation.id]: [...(prev[selectedConversation.id] || []), newMsg]
+        }));
+
+        setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, lastMessage: textToSend } : c));
+        if (!mediaUrl) setNewMessage('');
       }
     } catch (err) {
-      console.error("Erreur lors de l'envoi de la demande", err);
+      console.error('Erreur envoi message:', err);
     }
   };
 
-  // Répondre à une demande de contact (Accepter / Rejeter)
-  const handleRespondToRequest = async (requestId: string, status: 'accepted' | 'rejected') => {
+  // Ajouter un contact / ami
+  const handleAddFriendSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!friendIdentifier.trim()) return;
+
     try {
-      const res = await fetch(`${SOCKET_URL}/api/contacts/request/${requestId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
+      const res = await fetch('/api/messages/friends/add', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ identifier: friendIdentifier.trim() })
       });
-      
-      if (res.ok) {
-        setPendingRequests(prev => prev.filter(req => req.id !== requestId));
-        const contactsRes = await fetch(`${SOCKET_URL}/api/contacts/accepted?userId=${currentUserId}`);
-        if (contactsRes.ok) setAcceptedContacts(await contactsRes.json());
+
+      const data = await res.json();
+      if (data.success) {
+        setFriendIdentifier('');
+        setIsAddFriendOpen(false);
+        fetchConversations();
+      } else {
+        alert(data.message || "Erreur lors de l'ajout");
       }
     } catch (err) {
-      console.error("Erreur lors de la mise à jour de la requête", err);
+      console.error('Erreur ajout ami:', err);
     }
   };
 
-  // Filtrage des éléments selon la barre de recherche (on exclut l'utilisateur lui-même de l'onglet Ajout de membres)
-  const filteredChats = acceptedContacts.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  const filteredUsers = availableUsers.filter(u => 
-    u.id !== currentUserId && 
-    (u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedConversation) return;
+    const url = URL.createObjectURL(file);
+    handleSendMessage(undefined, type, file.name, url);
+    e.target.value = '';
+  };
+
+  const filteredConversations = conversations.filter(conv => {
+    const matchesSearch = conv.name.toLowerCase().includes(searchQuery.toLowerCase());
+    if (activeTab === 'friends') return conv.type === 'friend' && matchesSearch;
+    if (activeTab === 'support') return conv.type === 'support' && matchesSearch;
+    return matchesSearch;
+  });
 
   return (
-    <div className={`flex h-screen w-screen overflow-hidden font-sans transition-colors duration-300 ${
-      isLightMode ? 'bg-slate-100 text-slate-800' : 'bg-zinc-950 text-zinc-100'
-    }`}>
+    <div className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden relative selection:bg-orange-500 selection:text-white">
       
-      {/* SIDEBAR DES DISCUSSIONS */}
-      <aside className={`w-full md:w-85 lg:w-96 flex flex-col border-r transition-all duration-300 ${
-        isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'
-      } ${selectedContact ? 'hidden md:flex' : 'flex'}`}>
-        
-        {/* En-tête de la Sidebar */}
-        <div className={`p-4 border-b flex items-center justify-between ${
-          isLightMode ? 'border-slate-200' : 'border-zinc-800'
-        }`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-orange-600 text-white font-bold flex items-center justify-center shadow-md">
-              {userName.charAt(0).toUpperCase()}
+      {/* ================= MODAL APPEL AUDIO / VIDÉO EN PLEIN ÉCRAN ================= */}
+      {activeCall && selectedConversation && (
+        <div className="absolute inset-0 z-50 bg-zinc-950/98 backdrop-blur-xl flex flex-col items-center justify-between p-6 md:p-10 animate-in fade-in duration-200">
+          
+          {/* En-tête de l'appel */}
+          <div className="flex flex-col items-center gap-2 mt-4">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center font-bold text-xl shadow-lg shadow-orange-600/20">
+              {selectedConversation.name.substring(0, 2).toUpperCase()}
             </div>
-            <div>
-              <h2 className="text-sm font-bold truncate">{userName}</h2>
-              <span className="text-[10px] text-emerald-500 font-medium flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> En ligne
-              </span>
+            <h2 className="text-xl font-bold text-zinc-100 tracking-wide">{selectedConversation.name}</h2>
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400 text-xs font-medium animate-pulse">
+              <Radio className="w-3.5 h-3.5" />
+              <span>{activeCall === 'video' ? 'Appel vidéo sécurisé en cours...' : 'Appel audio en cours...'}</span>
             </div>
           </div>
-          
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsLightMode(!isLightMode)}
-              className={`p-2 rounded-xl transition cursor-pointer ${
-                isLightMode ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
-              }`}
-              title="Changer le thème"
+
+          {/* Écran des flux média WebRTC */}
+          <div className="w-full max-w-4xl flex-1 my-6 bg-zinc-900/80 border border-zinc-800/80 rounded-3xl flex items-center justify-center relative overflow-hidden shadow-2xl">
+            {/* Flux distant (Grand écran) */}
+            <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover bg-zinc-950" />
+            
+            {/* Si aucun flux distant n'arrive encore, afficher un indicateur pro */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none -z-10 text-zinc-600">
+              <Sparkles className="w-12 h-12 mb-2 animate-pulse text-orange-500/30" />
+              <p className="text-xs font-medium">Établissement de la connexion pair-à-pair...</p>
+            </div>
+
+            {/* Votre propre flux vidéo local (Picture-in-Picture) */}
+            {activeCall === 'video' && (
+              <div className="absolute bottom-6 right-6 w-44 h-32 bg-zinc-950 border border-zinc-700/60 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-md">
+                <video ref={localVideoRef} autoPlay playsInline muted className={`w-full h-full object-cover ${isCameraOff ? 'hidden' : ''}`} />
+                {isCameraOff && (
+                  <div className="flex flex-col items-center justify-center h-full text-[11px] text-zinc-400 gap-1 bg-zinc-900">
+                    <VideoIcon className="w-4 h-4 text-zinc-500" />
+                    <span>Caméra coupée</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Barre d'contrôles de l'appel */}
+          <div className="flex items-center gap-5 mb-2 bg-zinc-900/90 border border-zinc-800 px-8 py-4 rounded-full shadow-2xl backdrop-blur-md">
+            {/* Micro Mute / Unmute */}
+            <button 
+              onClick={() => {
+                if (localStreamRef.current) {
+                  const audioTrack = localStreamRef.current.getAudioTracks()[0];
+                  if (audioTrack) audioTrack.enabled = !audioTrack.enabled;
+                  setIsCallMuted(!isCallMuted);
+                }
+              }} 
+              className={`p-4 rounded-full transition cursor-pointer shadow-md ${isCallMuted ? 'bg-zinc-800 text-orange-500 border border-orange-500/30' : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}`}
+              title={isCallMuted ? "Activer le micro" : "Couper le micro"}
             >
-              {isLightMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              <Mic className={`w-5 h-5 ${isCallMuted ? 'opacity-80' : ''}`} />
+            </button>
+
+            {/* Caméra On / Off (Uniquement en appel vidéo) */}
+            {activeCall === 'video' && (
+              <button 
+                onClick={() => {
+                  if (localStreamRef.current) {
+                    const videoTrack = localStreamRef.current.getVideoTracks()[0];
+                    if (videoTrack) videoTrack.enabled = !videoTrack.enabled;
+                    setIsCameraOff(!isCameraOff);
+                  }
+                }} 
+                className={`p-4 rounded-full transition cursor-pointer shadow-md ${isCameraOff ? 'bg-zinc-800 text-orange-500 border border-orange-500/30' : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}`}
+                title={isCameraOff ? "Activer la caméra" : "Couper la caméra"}
+              >
+                <Video className="w-5 h-5" />
+              </button>
+            )}
+
+            {/* Raccrocher */}
+            <button 
+              onClick={endCall} 
+              className="p-4 rounded-full bg-red-600 hover:bg-red-500 text-white transition cursor-pointer shadow-xl shadow-red-600/30 scale-105 active:scale-95"
+              title="Raccrocher"
+            >
+              <PhoneOff className="w-5 h-5" />
             </button>
           </div>
         </div>
+      )}
 
-        {/* Barre de recherche et Onglets de navigation */}
-        <div className="p-4 space-y-3">
-          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition ${
-            isLightMode ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-zinc-950 border-zinc-800 text-zinc-200'
-          }`}>
-            <Search className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-            <input
+      {/* ================= BARRE LATÉRALE DES CONVERSATIONS ================= */}
+      <aside className="w-84 border-r border-zinc-800/80 flex flex-col bg-zinc-900/30">
+        <div className="p-4 border-b border-zinc-800/80 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2.5 rounded-2xl bg-orange-600/10 text-orange-500 border border-orange-500/20">
+              <MessageCircle className="w-5 h-5" />
+            </div>
+            <h1 className="font-bold text-base tracking-tight">Messages</h1>
+          </div>
+          <button 
+            onClick={() => setIsAddFriendOpen(!isAddFriendOpen)}
+            className="px-3 py-2 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 transition flex items-center gap-1.5 text-xs font-semibold cursor-pointer border border-zinc-700/50 shadow-sm"
+          >
+            <UserPlus className="w-4 h-4 text-orange-500" />
+            <span>Ajouter</span>
+          </button>
+        </div>
+
+        {/* Formulaire d'ajout d'ami */}
+        {isAddFriendOpen && (
+          <div className="p-3.5 bg-zinc-900/90 border-b border-zinc-800 animate-in slide-in-from-top-2 duration-150">
+            <form onSubmit={handleAddFriendSubmit} className="flex flex-col gap-2">
+              <span className="text-[11px] font-medium text-zinc-400">Ajouter via email ou pseudo exact</span>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={friendIdentifier}
+                  onChange={(e) => setFriendIdentifier(e.target.value)}
+                  placeholder="ex: user@domain.com"
+                  className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-orange-500 flex-1 transition"
+                />
+                <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer shadow-md shadow-orange-600/20">
+                  OK
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        <div className="p-3">
+          <div className="relative">
+            <Search className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input 
               type="text"
-              placeholder="Rechercher..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-transparent text-xs focus:outline-none"
+              placeholder="Rechercher une discussion..."
+              className="w-full bg-zinc-900/80 border border-zinc-800/80 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-orange-500/60 transition"
             />
-          </div>
-
-          <div className="grid grid-cols-4 gap-1">
-            <button
-              onClick={() => setActiveBottomTab('chats')}
-              className={`py-2 text-[10px] font-bold rounded-xl transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                activeBottomTab === 'chats'
-                  ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
-                  : isLightMode ? 'bg-slate-200 text-slate-600' : 'bg-zinc-800 text-zinc-400'
-              }`}
-            >
-              <MessageCircle className="w-3.5 h-3.5" /> Discussions
-            </button>
-            <button
-              onClick={() => setActiveBottomTab('people')}
-              className={`py-2 text-[10px] font-bold rounded-xl transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                activeBottomTab === 'people'
-                  ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
-                  : isLightMode ? 'bg-slate-200 text-slate-600' : 'bg-zinc-800 text-zinc-400'
-              }`}
-            >
-              <Users className="w-3.5 h-3.5" /> Ajout membres
-            </button>
-            <button
-              onClick={() => setActiveBottomTab('requests')}
-              className={`py-2 text-[10px] font-bold rounded-xl transition cursor-pointer flex flex-col items-center justify-center gap-1 relative ${
-                activeBottomTab === 'requests'
-                  ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
-                  : isLightMode ? 'bg-slate-200 text-slate-600' : 'bg-zinc-800 text-zinc-400'
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5" /> Requêtes
-              {pendingRequests.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                  {pendingRequests.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => navigate('/')}
-              className={`py-2 text-[10px] font-bold rounded-xl transition cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                isLightMode ? 'bg-slate-200 hover:bg-slate-300 text-slate-700' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
-              }`}
-              title="Retour à l'accueil"
-            >
-              <Home className="w-3.5 h-3.5" /> Accueil
-            </button>
           </div>
         </div>
 
-        {/* Liste dynamique selon l'onglet actif */}
-        <div className="flex-1 overflow-y-auto px-4 pb-20 md:pb-4 space-y-2">
-          {activeBottomTab === 'chats' ? (
-            filteredChats.length === 0 ? (
-              <div className="text-center py-12 text-zinc-500 text-xs">
-                Aucune discussion active. Explorez l'onglet "Ajout membres" pour ajouter des contacts.
-              </div>
-            ) : (
-              filteredChats.map((contact) => {
-                const avatarUrl = getAvatarUrl(contact.avatar);
-                return (
-                  <div
-                    key={contact.id}
-                    onClick={() => setSelectedContact(contact)}
-                    className={`flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition ${
-                      selectedContact?.id === contact.id
-                        ? 'bg-orange-600/10 border border-orange-500/30'
-                        : isLightMode ? 'hover:bg-slate-50' : 'hover:bg-zinc-800/50'
-                    }`}
-                  >
-                    <div className="w-11 h-11 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-sm flex-shrink-0 overflow-hidden relative">
-                      {avatarUrl ? (
-                        <img src={avatarUrl} alt={contact.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <span>{contact.name?.charAt(0).toUpperCase()}</span>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between">
-                        <h4 className={`text-xs font-bold truncate ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>
-                          {contact.name}
-                        </h4>
-                        <span className="text-[10px] text-zinc-400">En ligne</span>
-                      </div>
-                      <p className="text-[11px] text-zinc-400 truncate mt-0.5">Cliquez pour voir les messages...</p>
-                    </div>
-                  </div>
-                );
-              })
-            )
-          ) : activeBottomTab === 'people' ? (
-            filteredUsers.map((user) => {
-              const avatarUrl = getAvatarUrl(user.avatar);
-              const isContact = acceptedContacts.some(c => c.id === user.id);
-              const isPending = pendingRequests.some(r => r.receiverId === user.id || r.senderId === user.id);
+        <div className="flex px-3 gap-1.5 mb-2">
+          <button onClick={() => setActiveTab('all')} className={`flex-1 py-2 text-xs font-semibold rounded-xl transition cursor-pointer ${activeTab === 'all' ? 'bg-orange-600/15 text-orange-400 border border-orange-500/20' : 'text-zinc-400 hover:bg-zinc-900'}`}>Tous</button>
+          <button onClick={() => setActiveTab('friends')} className={`flex-1 py-2 text-xs font-semibold rounded-xl transition cursor-pointer ${activeTab === 'friends' ? 'bg-orange-600/15 text-orange-400 border border-orange-500/20' : 'text-zinc-400 hover:bg-zinc-900'}`}>Amis</button>
+          <button onClick={() => setActiveTab('support')} className={`flex-1 py-2 text-xs font-semibold rounded-xl transition cursor-pointer ${activeTab === 'support' ? 'bg-orange-600/15 text-orange-400 border border-orange-500/20' : 'text-zinc-400 hover:bg-zinc-900'}`}>Support</button>
+        </div>
 
-              return (
-                <div
-                  key={user.id}
-                  className={`flex items-center justify-between p-3 rounded-2xl border transition ${
-                    isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-xs flex-shrink-0 overflow-hidden relative">
-                      {avatarUrl ? (
-                        <img src={avatarUrl} alt={user.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <span>{user.name?.charAt(0).toUpperCase()}</span>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className={`text-xs font-bold truncate ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>{user.name}</p>
-                      <p className="text-[10px] text-zinc-400 truncate">{user.email}</p>
-                    </div>
-                  </div>
-
-                  {isContact ? (
-                    <span className="text-[10px] text-emerald-500 font-bold px-2 py-1 bg-emerald-500/10 rounded-lg">Connecté</span>
-                  ) : isPending ? (
-                    <span className="text-[10px] text-amber-500 font-bold px-2 py-1 bg-amber-500/10 rounded-lg">En attente</span>
-                  ) : (
-                    <button
-                      onClick={() => handleSendContactRequest(user.id)}
-                      className="p-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white transition cursor-pointer"
-                      title="Ajouter"
-                    >
-                      <UserPlus className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              );
-            })
+        <div className="flex-1 overflow-y-auto px-2 space-y-1 custom-scrollbar pb-4">
+          {loadingConversations ? (
+            <div className="text-center py-10 text-xs text-zinc-500 animate-pulse">Chargement des conversations...</div>
+          ) : filteredConversations.length === 0 ? (
+            <div className="text-center py-10 text-xs text-zinc-500 px-4">Aucune conversation trouvée. Ajoutez un contact pour commencer.</div>
           ) : (
-            pendingRequests.length === 0 ? (
-              <div className="text-center py-12 text-zinc-500 text-xs">
-                Aucune demande de contact en attente.
-              </div>
-            ) : (
-              pendingRequests.map((req) => {
-                const sender = req.sender || { name: 'Utilisateur', email: '', avatar: undefined };
-                const avatarUrl = getAvatarUrl(sender.avatar);
-                return (
-                  <div
-                    key={req.id}
-                    className={`flex items-center justify-between p-3 rounded-2xl border transition ${
-                      isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-xs flex-shrink-0 overflow-hidden relative">
-                        {avatarUrl ? (
-                          <img src={avatarUrl} alt={sender.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <span>{sender.name?.charAt(0).toUpperCase()}</span>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className={`text-xs font-bold truncate ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>{sender.name}</p>
-                        <p className="text-[10px] text-zinc-400 truncate">Souhaite vous ajouter</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => handleRespondToRequest(req.id, 'accepted')}
-                        className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition cursor-pointer"
-                        title="Accepter"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleRespondToRequest(req.id, 'rejected')}
-                        className="p-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition cursor-pointer"
-                        title="Rejeter"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+            filteredConversations.map(conv => (
+              <div 
+                key={conv.id}
+                onClick={() => setSelectedConversation(conv)}
+                className={`p-3 rounded-2xl flex items-start gap-3 cursor-pointer transition ${selectedConversation?.id === conv.id ? 'bg-zinc-800/90 border border-zinc-700/60 shadow-md' : 'hover:bg-zinc-900/60 border border-transparent'}`}
+              >
+                <div className="relative">
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm ${conv.type === 'support' ? 'bg-orange-600/20 text-orange-500 border border-orange-500/30' : 'bg-zinc-800 text-zinc-300'}`}>
+                    {conv.type === 'support' ? <ShieldCheck className="w-5 h-5" /> : conv.name.substring(0, 2).toUpperCase()}
                   </div>
-                );
-              })
-            )
+                  {conv.isOnline && <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-zinc-950 rounded-full"></span>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-xs text-zinc-200 truncate">{conv.name}</span>
+                    {conv.isVerified && <CheckCircle2 className="w-3.5 h-3.5 text-orange-500 fill-orange-500/20" />}
+                  </div>
+                  <p className="text-xs text-zinc-400 truncate">{conv.lastMessage || 'Aucun message récent'}</p>
+                </div>
+              </div>
+            ))
           )}
         </div>
       </aside>
 
-      {/* ZONE DE DISCUSSION ACTIVE */}
-      <main className={`flex-1 flex flex-col h-full relative ${!selectedContact ? 'hidden md:flex' : 'flex'}`}>
-        
-        {/* MODALE D'APPEL EN COURS */}
-        {inCall && (
-          <div className="absolute inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4">
-            <div className="relative w-full max-w-4xl h-[70vh] bg-zinc-900 rounded-3xl overflow-hidden flex items-center justify-center border border-zinc-800">
-              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
-              {isVideoCall && (
-                <video ref={localVideoRef} autoPlay playsInline muted className="absolute bottom-4 right-4 w-44 h-32 object-cover rounded-2xl border-2 border-orange-500 shadow-xl" />
-              )}
-            </div>
-            <button onClick={endCall} className="mt-6 px-8 py-3 bg-red-600 hover:bg-red-500 font-bold rounded-2xl transition cursor-pointer text-white">
-              Raccrocher
-            </button>
-          </div>
-        )}
-
-        {/* POPUP D'APPEL ENTRANT */}
-        {incomingCallData && !inCall && (
-          <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4">
-            <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl text-center shadow-2xl">
-              <h3 className="text-xl font-bold mb-4 text-white">📞 Appel entrant...</h3>
-              <div className="flex gap-4 justify-center">
-                <button onClick={acceptCall} className="px-6 py-3 bg-green-600 hover:bg-green-500 rounded-2xl font-bold transition text-white">Accepter</button>
-                <button onClick={() => setIncomingCallData(null)} className="px-6 py-3 bg-red-600 hover:bg-red-500 rounded-2xl font-bold transition text-white">Refuser</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {selectedContact ? (
+      {/* ================= ZONE DE DISCUSSION PRINCIPALE ================= */}
+      <main className="flex-1 flex flex-col bg-zinc-950">
+        {selectedConversation ? (
           <>
-            {/* Header du chat actif */}
-            <div className={`p-4 border-b flex items-center justify-between backdrop-blur-md ${
-              isLightMode ? 'bg-white/80 border-slate-200' : 'bg-zinc-900/80 border-zinc-800'
-            }`}>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setSelectedContact(null)}
-                  className="md:hidden p-2 rounded-xl bg-orange-600/10 text-orange-500"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <div className="w-10 h-10 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-sm overflow-hidden relative">
-                  {selectedContact.avatar ? (
-                    <img src={getAvatarUrl(selectedContact.avatar)!} alt={selectedContact.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <span>{selectedContact.name.charAt(0).toUpperCase()}</span>
-                  )}
+            {/* Header de la conversation */}
+            <header className="px-6 py-4 border-b border-zinc-800/80 flex items-center justify-between bg-zinc-900/30 backdrop-blur-md">
+              <div className="flex items-center gap-3.5">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm ${selectedConversation.type === 'support' ? 'bg-orange-600/20 text-orange-500 border border-orange-500/30' : 'bg-zinc-800 text-zinc-200'}`}>
+                  {selectedConversation.type === 'support' ? <ShieldCheck className="w-5 h-5" /> : selectedConversation.name.substring(0, 2).toUpperCase()}
                 </div>
                 <div>
-                  <h3 className={`text-sm font-bold ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>
-                    {selectedContact.name}
-                  </h3>
-                  <span className="text-[10px] text-emerald-500 font-medium">En ligne</span>
+                  <h2 className="font-bold text-sm text-zinc-100 flex items-center gap-2">
+                    {selectedConversation.name}
+                    {selectedConversation.isVerified && <CheckCircle2 className="w-3.5 h-3.5 text-orange-500 fill-orange-500/20" />}
+                  </h2>
+                  <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    En ligne
+                  </span>
                 </div>
               </div>
 
-              {/* BOUTONS D'APPEL AUDIO & VIDÉO */}
-              <div className="flex items-center gap-2">
+              {/* Boutons d'appels réels */}
+              <div className="flex items-center gap-1.5 text-zinc-400">
                 <button 
-                  onClick={() => startCall(false)} 
-                  className="p-2.5 bg-zinc-800/80 hover:bg-orange-500/20 text-orange-400 rounded-xl transition cursor-pointer"
-                  title="Appel audio"
+                  onClick={() => startCall('audio')} 
+                  className="p-2.5 hover:bg-zinc-800 rounded-xl transition cursor-pointer hover:text-zinc-200" 
+                  title="Démarrer un appel audio"
                 >
                   <Phone className="w-4 h-4" />
                 </button>
                 <button 
-                  onClick={() => startCall(true)} 
-                  className="p-2.5 bg-zinc-800/80 hover:bg-orange-500/20 text-orange-400 rounded-xl transition cursor-pointer"
-                  title="Appel vidéo"
+                  onClick={() => startCall('video')} 
+                  className="p-2.5 hover:bg-zinc-800 rounded-xl transition cursor-pointer hover:text-zinc-200" 
+                  title="Démarrer un appel vidéo"
                 >
                   <Video className="w-4 h-4" />
                 </button>
+                <div className="w-px h-5 bg-zinc-800 mx-1"></div>
+                <button className="p-2.5 hover:bg-zinc-800 rounded-xl transition cursor-pointer hover:text-zinc-200">
+                  <MoreVertical className="w-4 h-4" />
+                </button>
               </div>
-            </div>
+            </header>
 
-            {/* Corps des messages */}
-            <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${
-              isLightMode ? 'bg-slate-50' : 'bg-zinc-950'
-            }`}>
-              {messages.map((msg) => {
-                const isMe = msg.senderId === currentUserId;
-                return (
-                  <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[75%] md:max-w-[60%] rounded-2xl px-4 py-3 shadow-sm ${
-                      isMe 
-                        ? 'bg-orange-600 text-white rounded-br-none' 
-                        : isLightMode ? 'bg-white text-slate-800 rounded-bl-none border border-slate-200' : 'bg-zinc-900 text-zinc-100 rounded-bl-none border border-zinc-800'
-                    }`}>
-                      <p className="text-xs leading-relaxed">{msg.content}</p>
-                      <div className={`flex items-center justify-end gap-1 mt-1 text-[9px] ${isMe ? 'text-orange-200' : 'text-zinc-400'}`}>
-                        <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        {isMe && <CheckCheck className="w-3 h-3" />}
+            {/* Liste des messages */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+              {loadingMessages ? (
+                <div className="text-center py-10 text-xs text-zinc-500 animate-pulse">Chargement des messages...</div>
+              ) : (
+                (messages[selectedConversation.id] || []).map(msg => {
+                  const isMe = msg.senderId !== selectedConversation.id; 
+                  return (
+                    <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                      <div className={`max-w-md rounded-2xl px-4 py-3 text-xs leading-relaxed shadow-sm ${isMe ? 'bg-orange-600 text-white rounded-br-none shadow-orange-600/10' : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-bl-none'}`}>
+                        {msg.type === 'image' && msg.mediaUrl && (
+                          <div className="mb-2 rounded-xl overflow-hidden bg-zinc-950 border border-zinc-800">
+                            <img src={msg.mediaUrl} alt="Média partagé" className="w-full h-48 object-cover" />
+                          </div>
+                        )}
+                        {msg.type === 'video' && msg.mediaUrl && (
+                          <div className="mb-2 rounded-xl overflow-hidden bg-zinc-950 border border-zinc-800">
+                            <video src={msg.mediaUrl} controls className="w-full h-48 object-cover" />
+                          </div>
+                        )}
+                        {msg.type === 'audio' && msg.mediaUrl && (
+                          <div className="flex items-center gap-3 my-1 min-w-[220px]">
+                            <audio src={msg.mediaUrl} controls className="w-full h-8 accent-orange-500" />
+                          </div>
+                        )}
+                        {msg.text && <p className="whitespace-pre-wrap">{msg.text}</p>}
                       </div>
+                      <span className="text-[10px] text-zinc-500 mt-1 px-1">{msg.timestamp}</span>
                     </div>
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} />
+                  );
+                })
+              )}
             </div>
 
-            {/* Barre de saisie de message et médias */}
-            <form onSubmit={handleSendMessage} className={`p-4 border-t flex items-center gap-3 ${
-              isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'
-            }`}>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileUpload} 
-                accept="image/*,video/*,audio/*" 
-                className="hidden" 
-              />
-              
+            {/* Champs de fichiers cachés */}
+            <input type="file" ref={fileInputRef} onChange={(e) => handleFileUpload(e, 'image')} accept="image/*" className="hidden" />
+            <input type="file" ref={videoInputRef} onChange={(e) => handleFileUpload(e, 'video')} accept="video/*" className="hidden" />
+
+            {/* Barre d'envoi de messages */}
+            <form onSubmit={(e) => handleSendMessage(e, 'text')} className="p-4 border-t border-zinc-800/80 bg-zinc-900/30 flex items-center gap-2.5 backdrop-blur-md">
               <button 
                 type="button" 
                 onClick={() => fileInputRef.current?.click()} 
-                disabled={uploading}
-                className="p-2.5 text-zinc-400 hover:text-orange-500 transition cursor-pointer"
-                title="Envoyer une photo, vidéo ou audio"
+                className="p-3 rounded-2xl text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-200 transition cursor-pointer"
+                title="Envoyer une image"
               >
                 <ImageIcon className="w-5 h-5" />
               </button>
+              <button 
+                type="button" 
+                onClick={() => videoInputRef.current?.click()} 
+                className="p-3 rounded-2xl text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-200 transition cursor-pointer"
+                title="Envoyer une vidéo"
+              >
+                <VideoIcon className="w-5 h-5" />
+              </button>
+              <button 
+                type="button" 
+                onClick={toggleAudioRecording} 
+                className={`p-3 rounded-2xl transition cursor-pointer ${isRecordingAudio ? 'bg-red-600 text-white animate-pulse shadow-lg shadow-red-600/30' : 'text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-200'}`}
+                title={isRecordingAudio ? "Arrêter et envoyer le message vocal" : "Enregistrer un message vocal"}
+              >
+                <Mic className="w-5 h-5" />
+              </button>
 
-              <input
+              <input 
                 type="text"
-                placeholder="Écrivez votre message..."
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
-                className={`flex-1 px-4 py-3 rounded-2xl border text-xs focus:outline-none transition ${
-                  isLightMode 
-                    ? 'bg-slate-100 border-slate-200 text-slate-800 focus:border-orange-500' 
-                    : 'bg-zinc-950 border-zinc-800 text-zinc-100 focus:border-orange-500'
-                }`}
+                placeholder="Écrivez votre message..."
+                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-xs text-zinc-200 focus:outline-none focus:border-orange-500/60 transition shadow-inner"
               />
-              <button
-                type="submit"
-                disabled={!newMessage.trim() || uploading}
-                className="p-3 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white transition disabled:opacity-50 cursor-pointer shadow-lg shadow-orange-600/20"
+
+              <button 
+                type="submit" 
+                disabled={!newMessage.trim()} 
+                className="p-3.5 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white transition disabled:opacity-40 cursor-pointer shadow-lg shadow-orange-600/20"
               >
                 <Send className="w-4 h-4" />
               </button>
             </form>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-500">
-            <div className="w-16 h-16 rounded-3xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 mb-4 shadow-xl">
-              <MessageCircle className="w-8 h-8" />
+          <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 p-6 text-center">
+            <div className="w-20 h-20 rounded-3xl bg-orange-600/10 border border-orange-500/20 flex items-center justify-center mb-4 text-orange-500 shadow-xl">
+              <MessageCircle className="w-9 h-9 stroke-[1.5]" />
             </div>
-            <h3 className="text-sm font-bold text-zinc-300">Vos discussions</h3>
-            <p className="text-xs text-zinc-500 max-w-xs mt-1">Sélectionnez une conversation dans la liste de gauche ou trouvez un nouveau membre pour commencer à discuter.</p>
+            <h3 className="text-base font-bold text-zinc-200 mb-1">Centre de messagerie</h3>
+            <p className="text-xs max-w-sm text-zinc-400">Sélectionnez une discussion dans la barre latérale pour échanger en direct, passer des appels ou envoyer des messages vocaux.</p>
           </div>
         )}
       </main>
