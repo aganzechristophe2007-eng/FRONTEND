@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "capacitor-assets": {
-    "icon": "icon.jpg"
+    "input": "icon.jpg"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.1",
