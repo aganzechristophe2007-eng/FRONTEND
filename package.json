@@ -8,8 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
-  "capacitor-assets": {
-    "icon": "icon.jpg"
+"capacitor-assets": {
+    "input": "icon.jpg"
+  }
   },
   "dependencies": {
     "@capacitor/android": "^8.5.1",
