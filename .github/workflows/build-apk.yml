@@ -17,52 +17,32 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Use Node.js 20
+      - name: Use Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
-      - name: Install dependencies & Build Vite
-        run: |
-          npm install
-          npm install -D @capacitor/cli @capacitor/android
-          npm run build
+      - name: Install Project Dependencies
+        run: npm install
 
-      - name: Create Capacitor Config
-        run: |
-          echo '{
-            "appId": "com.soko.app",
-            "appName": "CBFSOKO",
-            "webDir": "dist",
-            "bundledWebRuntime": false
-          }' > capacitor.config.json
+      - name: Build Vite Frontend
+        run: npm run build
 
-      - name: Add and Sync Capacitor Android
+      - name: Debug - Check Dist Folder
         run: |
-          npx cap add android
-          npx cap sync android
+          echo "=== FICHIERS DANS DIST ==="
+          ls -la dist/
 
-      - name: Fix Kotlin Version Conflicts
+      - name: Add Android Platform
+        run: npx cap add android
+
+      - name: Force Copy Dist to Android Assets
         run: |
-          echo "
-          configurations.all {
-              resolutionStrategy {
-                  force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
-                  force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
-                  force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
-              }
-          }
-          " >> android/app/build.gradle
+          echo "=== NETTOYAGE ET COPIE FORCEE ==="
+          rm -rf android/app/src/main/assets/public/*
+          cp -r dist/* android/app/src/main/assets/public/
+          echo "=== VERIFICATION DU DOSSIER ANDROID ASSETS ==="
+          ls -la android/app/src/main/assets/public/
 
       - name: Build APK with Gradle
         run: |
@@ -70,7 +50,7 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
