@@ -2,10 +2,10 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
-  Search, PlusCircle, Sun, Moon, Zap, Wallet, 
+  Search, PlusCircle, Sun, Moon, Zap, Wallet, Palette, MoreHorizontal, Share2, Flag, Check, 
   MessageSquare, Bell, LogOut, Package, ShieldCheck, Truck, 
   Headphones, MapPin, Home as HomeIcon, Image as ImageIcon, Sparkles, X, ChevronDown, Award, CreditCard, Camera, User as UserIcon, HelpCircle, History, Info, Target, Store,
-  FileText, Cookie, Scale, Mail, Phone, Palette, Filter, MoreHorizontal, Share2, Flag, Check
+  FileText, Cookie, Scale, Mail, Phone
 } from 'lucide-react';
 import { apiFetch } from '../api/client';
 
@@ -64,15 +64,16 @@ const YoutubeIcon = ({ className }: { className?: string }) => (
 );
 
 export default function Home() {
-  const [darkMode, setDarkMode] = useState<boolean>(() => localStorage.getItem('cbfsoko-theme') !== 'light');
-  const [showThemeMenu, setShowThemeMenu] = useState<boolean>(false);
+  const [darkMode, setDarkMode] = useState<boolean>(() => localStorage.getItem('cbfsoko-theme-mode') === 'light' ? false : true);
   const [themeMode, setThemeMode] = useState<'dark' | 'light' | 'system'>(() => {
     const saved = localStorage.getItem('cbfsoko-theme-mode');
     return saved === 'light' || saved === 'system' ? saved : 'dark';
   });
+  const [showThemeMenu, setShowThemeMenu] = useState(false);
+  const themeMenuRef = useRef<HTMLDivElement>(null);
   const [postFilter, setPostFilter] = useState<'ALL' | 'SALE' | 'REQUEST'>('ALL');
   const [openProductMenu, setOpenProductMenu] = useState<string | null>(null);
-  const [showPrivacyPanel, setShowPrivacyPanel] = useState<boolean>(false);
+  const [legalPanel, setLegalPanel] = useState<'terms' | 'privacy' | 'mentions' | 'cookies' | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showServicesDropdown, setShowServicesDropdown] = useState<boolean>(false);
   const [showMobileServicesModal, setShowMobileServicesModal] = useState<boolean>(false);
@@ -151,17 +152,15 @@ export default function Home() {
     }
   }, [getImageUrl]);
 
+  // Gestion réelle du thème : clair, sombre ou automatique selon le système.
   useEffect(() => {
     const applyTheme = (mode: 'dark' | 'light' | 'system') => {
-      if (mode === 'system') {
-        setDarkMode(window.matchMedia('(prefers-color-scheme: dark)').matches);
-      } else {
-        setDarkMode(mode === 'dark');
-      }
+      const isDark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      setDarkMode(isDark);
+      localStorage.setItem('cbfsoko-theme-mode', mode);
+      localStorage.setItem('cbfsoko-theme', isDark ? 'dark' : 'light');
     };
     applyTheme(themeMode);
-    localStorage.setItem('cbfsoko-theme-mode', themeMode);
-    localStorage.setItem('cbfsoko-theme', themeMode === 'dark' ? 'dark' : 'light');
     if (themeMode !== 'system') return;
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const listener = () => setDarkMode(media.matches);
@@ -172,10 +171,14 @@ export default function Home() {
   // Gestion de la fermeture au clic en dehors pour le menu dropdown desktop
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (servicesDropdownRef.current && !servicesDropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (servicesDropdownRef.current && !servicesDropdownRef.current.contains(target)) {
         setShowServicesDropdown(false);
       }
-      setShowThemeMenu(false);
+      if (themeMenuRef.current && !themeMenuRef.current.contains(target)) {
+        setShowThemeMenu(false);
+      }
+      setOpenProductMenu(null);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
@@ -399,35 +402,57 @@ export default function Home() {
   }, [userAvatarUrl, user?.avatar, user?.name, getImageUrl]);
 
   const isRequestPost = useCallback((product: ProductItem) => {
-    const typeStr = String(product.type || '').toUpperCase();
-    const titleStr = String(product.title || '').toUpperCase();
-    return typeStr === 'REQUEST' || product.isDemande === true || titleStr.includes('[DEMANDE]');
+    const type = String(product.type || '').toUpperCase();
+    const title = String(product.title || '').toUpperCase();
+    return type === 'REQUEST' || product.isDemande === true || title.includes('[DEMANDE]');
   }, []);
 
-  const filteredProducts = useMemo(() => {
+  const displayedProducts = useMemo(() => {
     if (postFilter === 'ALL') return featuredProducts;
     return featuredProducts.filter(product => postFilter === 'REQUEST' ? isRequestPost(product) : !isRequestPost(product));
   }, [featuredProducts, postFilter, isRequestPost]);
 
   const shareProduct = async (product: ProductItem) => {
-    const productId = product.id || product._id;
-    if (!productId) return;
-    const url = `${window.location.origin}/products/${productId}`;
+    const id = product.id || product._id;
+    if (!id) return;
+    const url = `${window.location.origin}/products/${id}`;
     try {
-      if (navigator.share) {
-        await navigator.share({ title: product.title, text: `Découvrez ${product.title} sur CBF SOKO`, url });
-      } else {
-        await navigator.clipboard.writeText(url);
-      }
+      if (navigator.share) await navigator.share({ title: product.title, text: `Découvrez ${product.title} sur CBF SOKO`, url });
+      else await navigator.clipboard.writeText(url);
     } catch {}
     setOpenProductMenu(null);
   };
 
-  const themeOptions: Array<{ key: 'dark' | 'light' | 'system'; label: string }> = [
-    { key: 'system', label: 'Automatique' },
-    { key: 'light', label: 'Clair' },
-    { key: 'dark', label: 'Sombre' },
-  ];
+  const legalContent = {
+    terms: { title: 'Conditions d’utilisation', icon: FileText, sections: [
+      ['Utilisation du service', 'L’utilisation de CBF SOKO implique le respect des règles de publication, de communication et de transaction applicables sur la plateforme.'],
+      ['Publications', 'Chaque utilisateur est responsable des informations, images, prix et descriptions qu’il publie. Les contenus frauduleux, trompeurs ou illicites sont interdits.'],
+      ['Transactions', 'Les conditions d’achat, de vente, de livraison et de paiement doivent être clairement respectées par les parties concernées.'],
+      ['Compte utilisateur', 'L’utilisateur doit conserver ses informations de connexion confidentielles et signaler toute utilisation non autorisée de son compte.']
+    ]},
+    privacy: { title: 'Politique de confidentialité', icon: ShieldCheck, sections: [
+      ['Données collectées', 'CBF SOKO peut traiter les informations nécessaires à la création du compte, à la publication d’annonces, à la messagerie et au suivi des opérations.'],
+      ['Utilisation', 'Les données sont utilisées pour fournir les fonctionnalités demandées, sécuriser les comptes et améliorer le fonctionnement du service.'],
+      ['Partage', 'Les informations ne doivent être communiquées qu’aux acteurs nécessaires au fonctionnement d’une opération ou lorsque la loi l’exige.'],
+      ['Sécurité', 'Des mesures techniques et organisationnelles sont mises en place pour protéger les informations contre les accès non autorisés.']
+    ]},
+    mentions: { title: 'Mentions légales', icon: Scale, sections: [
+      ['Éditeur', 'CBF SOKO — plateforme numérique destinée à faciliter les échanges entre utilisateurs à Bukavu et dans sa région.'],
+      ['Siège et zone de service', 'Bukavu, République Démocratique du Congo.'],
+      ['Responsabilité', 'Les utilisateurs restent responsables des contenus et informations qu’ils publient sur la plateforme.'],
+      ['Contact', 'Pour toute question concernant le service, utilisez les moyens de contact officiellement indiqués par CBF SOKO.']
+    ]},
+    cookies: { title: 'Politique relative aux cookies', icon: Cookie, sections: [
+      ['Fonctionnement', 'Des éléments de stockage local peuvent être utilisés pour conserver certaines préférences de l’utilisateur, notamment le thème choisi.'],
+      ['Préférences', 'Les préférences enregistrées dans le navigateur permettent de retrouver une configuration cohérente lors des visites suivantes.'],
+      ['Gestion', 'L’utilisateur peut gérer ou supprimer les données stockées localement depuis les paramètres de son navigateur.']
+    ]},
+    community: { title: 'Règles de la communauté', icon: Info, sections: [
+      ['Respect', 'Les échanges doivent rester respectueux. Les insultes, menaces, harcèlements et comportements abusifs ne sont pas autorisés.'],
+      ['Annonces', 'Les publications doivent être exactes, compréhensibles et conformes aux règles de la plateforme.'],
+      ['Fraude et abus', 'Les tentatives de fraude, les fausses informations et l’utilisation abusive des comptes peuvent entraîner des mesures de restriction.']
+    ]}
+  } as const;
 
   // Contenu riche et détaillé sur l'historique, les créateurs, la mission, les services et garanties de CBF SOKO
   const detailedServicesContent = (
@@ -730,29 +755,26 @@ export default function Home() {
               </div>
             )}
 
-            <div className="relative">
+            <div className="relative" ref={themeMenuRef}>
               <button
-                onClick={() => setShowThemeMenu(prev => !prev)}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowThemeMenu(prev => !prev); }}
                 className={`p-2 rounded-full border transition cursor-pointer ${darkMode ? 'bg-neutral-950 border-neutral-800 text-orange-400 hover:border-orange-500' : 'bg-white border-neutral-300 text-orange-600 hover:border-orange-500'}`}
-                title="Paramètres d'apparence"
-                aria-label="Paramètres d'apparence"
+                title="Apparence"
+                aria-label="Choisir le thème"
               >
                 <Palette className="w-4 h-4" />
               </button>
               {showThemeMenu && (
-                <div className={`absolute right-0 top-full mt-2 w-48 rounded-2xl border shadow-2xl p-2 z-[60] ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
-                  <div className="px-2 py-2 text-[10px] font-extrabold uppercase tracking-wider text-neutral-500">Apparence</div>
-                  {themeOptions.map(option => (
-                    <button
-                      key={option.key}
-                      onClick={() => { setThemeMode(option.key); setShowThemeMenu(false); }}
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition ${themeMode === option.key ? 'bg-orange-600/10 text-orange-500' : darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}
-                    >
-                      <span className="flex items-center gap-2">
-                        {option.key === 'dark' ? <Moon className="w-3.5 h-3.5" /> : option.key === 'light' ? <Sun className="w-3.5 h-3.5" /> : <Palette className="w-3.5 h-3.5" />}
-                        {option.label}
-                      </span>
-                      {themeMode === option.key && <Check className="w-3.5 h-3.5" />}
+                <div className={`absolute right-0 top-full mt-2 w-44 rounded-xl border shadow-2xl p-1.5 z-[70] ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+                  {[
+                    { key: 'system' as const, label: 'Automatique', icon: Sparkles },
+                    { key: 'light' as const, label: 'Clair', icon: Sun },
+                    { key: 'dark' as const, label: 'Sombre', icon: Moon },
+                  ].map(({ key, label, icon: Icon }) => (
+                    <button key={key} type="button" onClick={() => { setThemeMode(key); setShowThemeMenu(false); }} className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs transition ${themeMode === key ? 'bg-orange-600 text-white' : darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}>
+                      <span className="flex items-center gap-2"><Icon className="w-3.5 h-3.5" />{label}</span>
+                      {themeMode === key && <Check className="w-3.5 h-3.5" />}
                     </button>
                   ))}
                 </div>
@@ -820,79 +842,17 @@ export default function Home() {
         </button>
       </div>
 
-      <AnimatePresence>
-        {showPrivacyPanel && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowPrivacyPanel(false)}
-              className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-[2px]"
-            />
-            <motion.aside
-              initial={{ x: '-105%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '-105%' }}
-              transition={{ type: 'spring', stiffness: 280, damping: 30 }}
-              className={`fixed left-0 top-0 bottom-0 z-[80] w-[92vw] sm:w-[58vw] lg:w-[52vw] max-w-[760px] border-r shadow-2xl overflow-y-auto ${darkMode ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-200 text-neutral-900'}`}
-            >
-              <div className={`sticky top-0 z-10 flex items-center justify-between px-5 sm:px-8 py-4 border-b backdrop-blur-md ${darkMode ? 'bg-neutral-950/95 border-neutral-800' : 'bg-white/95 border-neutral-200'}`}>
-                <div>
-                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-orange-500">CBF SOKO</p>
-                  <h3 className="text-base sm:text-xl font-extrabold mt-1">Politique de confidentialité</h3>
-                </div>
-                <button onClick={() => setShowPrivacyPanel(false)} className={`w-9 h-9 rounded-full flex items-center justify-center border ${darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-300' : 'bg-neutral-100 border-neutral-200 text-neutral-700'}`} aria-label="Fermer">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="px-5 sm:px-8 py-7 space-y-6 text-sm leading-7">
-                <section><h4 className="font-extrabold text-orange-500 mb-2">1. Données collectées</h4><p className="text-neutral-400">CBF SOKO peut traiter les informations nécessaires à la création du compte, à la publication d'annonces, à la messagerie, aux commandes et au fonctionnement de la plateforme.</p></section>
-                <section><h4 className="font-extrabold text-orange-500 mb-2">2. Utilisation des données</h4><p className="text-neutral-400">Les informations sont utilisées pour fournir les fonctionnalités demandées, sécuriser les comptes, faciliter les échanges entre utilisateurs et améliorer le fonctionnement de la plateforme.</p></section>
-                <section><h4 className="font-extrabold text-orange-500 mb-2">3. Confidentialité des échanges</h4><p className="text-neutral-400">Les informations personnelles et les échanges ne doivent être communiqués qu'aux personnes ou services nécessaires à l'exécution d'une opération, sous réserve des obligations légales applicables.</p></section>
-                <section><h4 className="font-extrabold text-orange-500 mb-2">4. Sécurité</h4><p className="text-neutral-400">CBF SOKO met en place des mesures techniques et organisationnelles destinées à protéger les données contre les accès non autorisés, la perte ou l'utilisation abusive.</p></section>
-                <section><h4 className="font-extrabold text-orange-500 mb-2">5. Vos choix</h4><p className="text-neutral-400">Vous pouvez demander des informations sur vos données et, lorsque la réglementation applicable le permet, demander leur rectification ou leur suppression selon les procédures proposées par la plateforme.</p></section>
-              </div>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-
       {/* CONTENU PRINCIPAL — flex-1 pour occuper l'espace restant et repousser le footer en bas */}
       <main className="flex-1 pb-20 sm:pb-0">
         <section className="max-w-7xl mx-auto px-2 sm:px-4 py-6">
-          <div className="flex flex-col gap-3 mb-5 border-b border-neutral-800 pb-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-orange-500" />
-                  <h2 className="text-base sm:text-2xl font-extrabold tracking-tight">BYA BIKO DISPO</h2>
-                </div>
-                <p className="text-[10px] sm:text-xs text-neutral-500 mt-1">Choisissez le type de publication à afficher.</p>
-              </div>
-              <Link to="/products" className="text-orange-500 hover:text-orange-400 font-semibold text-[11px] sm:text-xs uppercase tracking-wider transition flex items-center gap-1">
-                Catalogue complet &rarr;
-              </Link>
+          <div className="flex justify-between items-center mb-5 border-b border-neutral-800 pb-3">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-orange-500" />
+              <h2 className="text-base sm:text-2xl font-extrabold tracking-tight">BYA BIKO DISPO</h2>
             </div>
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              <div className="flex items-center gap-1.5 text-neutral-500 mr-1 flex-shrink-0">
-                <Filter className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Publications</span>
-              </div>
-              {[
-                { key: 'ALL' as const, label: 'Toutes' },
-                { key: 'SALE' as const, label: 'Articles' },
-                { key: 'REQUEST' as const, label: 'Demandes' },
-              ].map(filter => (
-                <button
-                  key={filter.key}
-                  onClick={() => setPostFilter(filter.key)}
-                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold border transition ${postFilter === filter.key ? 'bg-orange-600 text-white border-orange-600' : darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-orange-500 hover:text-orange-500' : 'bg-white border-neutral-200 text-neutral-600 hover:border-orange-500 hover:text-orange-500'}`}
-                >
-                  {filter.label}
-                </button>
-              ))}
-            </div>
+            <Link to="/products" className="text-orange-500 hover:text-orange-400 font-semibold text-[11px] sm:text-xs uppercase tracking-wider transition flex items-center gap-1">
+              Catalogue complet &rarr;
+            </Link>
           </div>
 
           {loadingProducts ? (
@@ -900,13 +860,13 @@ export default function Home() {
               <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
               Chargement des meilleures offres...
             </div>
-          ) : filteredProducts.length === 0 ? (
+          ) : displayedProducts.length === 0 ? (
             <div className="text-center py-16 text-neutral-500 text-xs bg-neutral-900/30 rounded-2xl border border-neutral-800">
-              Aucune publication ne correspond à ce filtre pour le moment.
+              Aucun produit disponible pour le moment. Soyez le premier à en poster un !
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
-              {filteredProducts.map((product, index) => {
+              {displayedProducts.map((product, index) => {
                 const productId = product.id || product._id;
                 const prodTitle = product.title || 'Article';
                 const priceUSDValue = product.priceUSD || 0;
@@ -932,14 +892,14 @@ export default function Home() {
                     viewport={{ once: true }}
                     transition={{ duration: 0.3, delay: index * 0.02 }}
                     onClick={() => goToProductDetails(productId)}
-                    className={`rounded-lg sm:rounded-2xl overflow-hidden border group shadow-sm hover:shadow-lg transition-all flex flex-col justify-between cursor-pointer hover:border-orange-500 hover:-translate-y-0.5 ${
+                    className={`rounded-xl sm:rounded-2xl overflow-hidden border group shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between cursor-pointer hover:border-orange-500 hover:-translate-y-1 ${
                       darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'
                     }`}
                   >
                     <div>
                       {/* Image carrée cliquable -> ProductDetails */}
                       <div 
-                        className="aspect-square w-full overflow-hidden bg-neutral-950 relative"
+                        className="aspect-[1/1] sm:aspect-[4/3] w-full overflow-hidden bg-neutral-950 relative"
                         onClick={(e) => {
                           e.stopPropagation();
                           goToProductDetails(productId);
@@ -956,33 +916,21 @@ export default function Home() {
                         <span className="absolute top-1 left-1 sm:top-2 sm:left-2 bg-black/80 backdrop-blur-md text-[8px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded text-orange-400 border border-neutral-700 truncate max-w-[70px] sm:max-w-[100px]">
                           {prodCategory}
                         </span>
+
                         {isRequestPost(product) && (
-                          <span className="absolute top-1 right-10 sm:top-2 sm:right-12 bg-orange-600 text-white text-[8px] sm:text-[10px] font-extrabold px-1.5 py-0.5 rounded border border-orange-500 shadow">
-                            DEMANDE
-                          </span>
+                          <span className="absolute top-1 right-1 sm:top-2 sm:right-2 bg-orange-600 text-white text-[8px] sm:text-[10px] font-extrabold px-2 py-1 rounded-full shadow-lg">DEMANDE</span>
                         )}
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setOpenProductMenu(prev => prev === productId ? null : (productId || null)); }}
-                          className="absolute top-1 right-1 sm:top-2 sm:right-2 w-7 h-7 rounded-full bg-black/75 backdrop-blur-md text-white flex items-center justify-center border border-neutral-700 hover:bg-orange-600 transition z-10"
-                          aria-label={`Options pour ${prodTitle}`}
-                        >
+
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setOpenProductMenu(openProductMenu === String(productId) ? null : String(productId)); }} className={`absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 rounded-full backdrop-blur-md border transition ${isRequestPost(product) ? 'right-1 sm:right-2 top-8 sm:top-10' : ''} ${darkMode ? 'bg-black/60 border-white/10 text-white hover:bg-orange-600' : 'bg-white/80 border-black/10 text-neutral-700 hover:bg-orange-600 hover:text-white'}`} title="Plus d’options">
                           <MoreHorizontal className="w-4 h-4" />
                         </button>
-                        {openProductMenu === productId && (
-                          <div className="absolute top-9 right-1 sm:top-11 sm:right-2 w-44 rounded-xl bg-neutral-900 border border-neutral-700 shadow-2xl z-30 p-1.5" onClick={(e) => e.stopPropagation()}>
-                            <button type="button" onClick={() => { setOpenProductMenu(null); goToProductDetails(productId); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-[11px] text-white hover:bg-neutral-800">
-                              <Info className="w-3.5 h-3.5 text-orange-500" /> Voir l'annonce
-                            </button>
-                            <button type="button" onClick={() => shareProduct(product)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-[11px] text-white hover:bg-neutral-800">
-                              <Share2 className="w-3.5 h-3.5 text-orange-500" /> Partager
-                            </button>
-                            <button type="button" onClick={() => { setOpenProductMenu(null); handleProtectedAction('/messages'); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-[11px] text-white hover:bg-neutral-800">
-                              <MessageSquare className="w-3.5 h-3.5 text-orange-500" /> Contacter
-                            </button>
-                            <button type="button" onClick={() => setOpenProductMenu(null)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-[11px] text-neutral-400 hover:bg-neutral-800 hover:text-red-400">
-                              <Flag className="w-3.5 h-3.5" /> Signaler
-                            </button>
+
+                        {openProductMenu === String(productId) && (
+                          <div className={`absolute top-11 right-1 sm:top-12 sm:right-2 w-40 rounded-xl border shadow-2xl p-1.5 z-20 ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`} onClick={(e) => e.stopPropagation()}>
+                            <button type="button" onClick={() => { setOpenProductMenu(null); goToProductDetails(productId); }} className={`w-full text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}>Voir l’annonce</button>
+                            <button type="button" onClick={() => shareProduct(product)} className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}><Share2 className="w-3.5 h-3.5 text-orange-500" />Partager</button>
+                            <button type="button" onClick={() => { setOpenProductMenu(null); handleProtectedAction('/messages'); }} className={`w-full text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}>Contacter</button>
+                            <button type="button" onClick={() => setOpenProductMenu(null)} className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-red-400 hover:bg-neutral-800' : 'text-red-600 hover:bg-neutral-100'}`}><Flag className="w-3.5 h-3.5" />Signaler</button>
                           </div>
                         )}
 
@@ -1101,11 +1049,11 @@ export default function Home() {
             <div>
               <h4 className={`text-xs font-extrabold uppercase tracking-wider mb-3 ${darkMode ? 'text-white' : 'text-neutral-900'}`}>Légal</h4>
               <ul className="flex flex-col gap-2 text-[12px]">
-                <li><Link to="/legal/terms" className="hover:text-orange-500 transition flex items-center gap-1.5"><FileText className="w-3 h-3" /> Conditions d'utilisation</Link></li>
-                <li><button type="button" onClick={() => setShowPrivacyPanel(true)} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><ShieldCheck className="w-3 h-3" /> Politique de confidentialité</button></li>
-                <li><Link to="/legal/cookies" className="hover:text-orange-500 transition flex items-center gap-1.5"><Cookie className="w-3 h-3" /> Politique de cookies</Link></li>
-                <li><Link to="/legal/mentions" className="hover:text-orange-500 transition flex items-center gap-1.5"><Scale className="w-3 h-3" /> Mentions légales</Link></li>
-                <li><Link to="/legal/community" className="hover:text-orange-500 transition flex items-center gap-1.5"><Info className="w-3 h-3" /> Règles de la communauté</Link></li>
+                <li><button type="button" onClick={() => setLegalPanel('terms')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><FileText className="w-3 h-3" /> Conditions d'utilisation</button></li>
+                <li><button type="button" onClick={() => setLegalPanel('privacy')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><ShieldCheck className="w-3 h-3" /> Politique de confidentialité</button></li>
+                <li><button type="button" onClick={() => setLegalPanel('cookies')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><Cookie className="w-3 h-3" /> Politique de cookies</button></li>
+                <li><button type="button" onClick={() => setLegalPanel('mentions')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><Scale className="w-3 h-3" /> Mentions légales</button></li>
+                <li><button type="button" onClick={() => setLegalPanel('community')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><Info className="w-3 h-3" /> Règles de la communauté</button></li>
               </ul>
             </div>
           </div>
@@ -1120,6 +1068,26 @@ export default function Home() {
           </div>
         </div>
       </footer>
+
+      <AnimatePresence>
+        {legalPanel && (() => {
+          const legal = legalContent[legalPanel];
+          const LegalIcon = legal.icon;
+          return (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/50" onClick={() => setLegalPanel(null)}>
+              <motion.aside initial={{ x: '-105%' }} animate={{ x: 0 }} exit={{ x: '-105%' }} transition={{ type: 'tween', duration: 0.35 }} onClick={(e) => e.stopPropagation()} className={`absolute left-0 top-0 bottom-0 w-[92vw] sm:w-[58vw] lg:w-[52vw] max-w-[760px] border-r shadow-2xl overflow-y-auto ${darkMode ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-200 text-neutral-900'}`}>
+                <div className={`sticky top-0 z-10 flex items-center justify-between px-5 sm:px-7 py-4 border-b backdrop-blur-md ${darkMode ? 'bg-neutral-950/95 border-neutral-800' : 'bg-white/95 border-neutral-200'}`}>
+                  <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-orange-500/10 text-orange-500 flex items-center justify-center"><LegalIcon className="w-5 h-5" /></div><div><h2 className="font-black text-sm sm:text-base">{legal.title}</h2><p className="text-[10px] text-neutral-500 mt-0.5">CBF SOKO</p></div></div>
+                  <button type="button" onClick={() => setLegalPanel(null)} className={`p-2 rounded-full transition ${darkMode ? 'hover:bg-neutral-800 text-neutral-400' : 'hover:bg-neutral-100 text-neutral-500'}`}><X className="w-5 h-5" /></button>
+                </div>
+                <div className="px-5 sm:px-8 py-7 space-y-6">
+                  {legal.sections.map(([title, text]) => <section key={title}><h3 className="font-extrabold text-xs sm:text-sm text-orange-500 mb-2">{title}</h3><p className={`text-xs sm:text-sm leading-6 ${darkMode ? 'text-neutral-300' : 'text-neutral-600'}`}>{text}</p></section>)}
+                </div>
+              </motion.aside>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
 
     </div>
   );
