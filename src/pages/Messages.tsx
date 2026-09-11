@@ -1,11 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { 
-  ArrowLeft, LogOut, Send, Inbox, AlertCircle, UserPlus, CheckCircle, 
-  Headphones, Sun, Moon, MessageCircle, Search, User as UserIcon, 
-  Mic, Square, Phone, Video, PhoneOff, Paperclip, Smile, Users, CheckCheck, Play, Pause, Image as ImageIcon 
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  ArrowLeft, Send, Search, User as UserIcon, Mic, Square, Phone, Video,
+  PhoneOff, Paperclip, Smile, CheckCheck, Check, Play, Image as ImageIcon,
+  MoreVertical, Sun, Moon, X, UserPlus, Headphones
 } from 'lucide-react';
-import { io } from 'socket.io-client';
+import { io, Socket } from 'socket.io-client';
+
+const BACKEND_URL = 'https://cbfsoko-backend.onrender.com';
+const COMMON_EMOJIS = ['😀', '😂', '😍', '👍', '🙏', '🔥', '🎉', '❤️', '😎', '😅', '👏', '✨', '👋', '💯', '🤔', '😊'];
 
 interface ContactUser {
   id: string;
@@ -13,9 +17,7 @@ interface ContactUser {
   email: string;
   role?: string;
   avatar?: string;
-  updatedAt?: string;
   contactStatus?: 'ACCEPTED' | 'PENDING' | 'REJECTED' | null;
-  unreadCount?: number;
 }
 
 interface Message {
@@ -24,128 +26,204 @@ interface Message {
   receiverId: string;
   content: string;
   createdAt: string;
-  sender?: {
-    name: string;
-  };
+  isRead?: boolean;
+  tempId?: string;
+  pending?: boolean;
+  sender?: { name: string };
 }
-
-const COMMON_EMOJIS = ['😀', '😂', '😍', '👍', '🙏', '🔥', '🎉', '❤️', '😎', '😅', '👏', '✨', '👋', '💯', '🤔', '😊'];
 
 export default function MessagesPage() {
   const navigate = useNavigate();
+  const [darkMode, setDarkMode] = useState(true);
   const [currentUserId, setCurrentUserId] = useState('');
-  const [userName, setUserName] = useState('Utilisateur');
-  const [userAvatar, setUserAvatar] = useState('');
-  const [userRole, setUserRole] = useState('');
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
 
   const [acceptedContacts, setAcceptedContacts] = useState<ContactUser[]>([]);
   const [availableUsers, setAvailableUsers] = useState<ContactUser[]>([]);
   const [selectedContact, setSelectedContact] = useState<ContactUser | null>(null);
-  
   const [showMobileChat, setShowMobileChat] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  
   const [activeBottomTab, setActiveBottomTab] = useState<'chats' | 'people'>('chats');
-  const [isLightMode, setIsLightMode] = useState(true);
-  const [pendingRequests, setPendingRequests] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const [messagesByContact, setMessagesByContact] = useState<Record<string, Message[]>>({});
+  const [lastMessageByContact, setLastMessageByContact] = useState<Record<string, Message>>({});
+  const [unreadByContact, setUnreadByContact] = useState<Record<string, number>>({});
+
+  const [newMessage, setNewMessage] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-  // États pour l'enregistrement vocal
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [typingFrom, setTypingFrom] = useState<Set<string>>(new Set());
+
+  // Vocal
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<any>(null);
+  const recordTimerRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // États et références pour les appels WebRTC / Socket.io
-  const socketRef = useRef<any>(null);
+  // Appels WebRTC
   const [inCall, setInCall] = useState(false);
   const [isCallingOut, setIsCallingOut] = useState(false);
   const [incomingCallData, setIncomingCallData] = useState<any>(null);
   const [callType, setCallType] = useState<'audio' | 'video'>('audio');
   const [callDuration, setCallDuration] = useState(0);
-  
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
   const callTimerRef = useRef<any>(null);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const socketRef = useRef<Socket | null>(null);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  // --- Miroirs "ref" pour éviter les closures figées dans les listeners socket ---
+  const selectedContactRef = useRef<ContactUser | null>(null);
+  const callDurationRef = useRef(0);
+  const callTypeRef = useRef<'audio' | 'video'>('audio');
+  useEffect(() => { selectedContactRef.current = selectedContact; }, [selectedContact]);
+  useEffect(() => { callDurationRef.current = callDuration; }, [callDuration]);
+  useEffect(() => { callTypeRef.current = callType; }, [callType]);
 
-  useEffect(() => {
-    ringtoneRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3');
-    if (ringtoneRef.current) {
-      ringtoneRef.current.loop = true;
-    }
-  }, []);
+  const messages = selectedContact ? (messagesByContact[selectedContact.id] || []) : [];
 
-  const getAvatarUrl = (path?: string) => {
+  const getAvatarUrl = useCallback((path?: string) => {
     if (!path || typeof path !== 'string') return '';
     const trimmed = path.trim();
     if (!trimmed) return '';
-    if (trimmed.startsWith('http') || trimmed.startsWith('blob:') || trimmed.startsWith('data:')) {
-      return trimmed;
-    }
+    if (trimmed.startsWith('http') || trimmed.startsWith('blob:') || trimmed.startsWith('data:')) return trimmed;
     const cleanPath = trimmed.replace(/\\/g, '/');
     const formattedPath = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
-    if (!formattedPath.includes('uploads')) {
-      return `https://cbfsoko-backend.onrender.com/uploads${formattedPath}`;
-    }
-    return `https://cbfsoko-backend.onrender.com${formattedPath}`;
+    if (!formattedPath.includes('uploads')) return `${BACKEND_URL}/uploads${formattedPath}`;
+    return `${BACKEND_URL}${formattedPath}`;
+  }, []);
+
+  const getInitials = (name?: string) => {
+    if (!name) return "U";
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
   };
 
-  const isUserOnline = (updatedAt?: string) => {
-    if (!updatedAt) return false;
-    const lastActive = new Date(updatedAt).getTime();
-    const now = new Date().getTime();
-    const diffMinutes = (now - lastActive) / (1000 * 60);
-    return diffMinutes <= 3;
-  };
+  const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  useEffect(() => { scrollToBottom(); }, [messages.length]);
 
+  // ============ INITIALISATION ============
   useEffect(() => {
     const token = localStorage.getItem('token');
     const userStr = localStorage.getItem('user');
-
     if (!token || !userStr) {
       navigate('/login?redirect=/messages');
       return;
     }
-
     try {
       const user = JSON.parse(userStr);
       if (user.id) setCurrentUserId(user.id);
-      if (user.name) setUserName(user.name);
-      if (user.role) setUserRole(user.role);
-      if (user.avatar) setUserAvatar(user.avatar);
-    } catch {
-      // Ignorer
-    }
-
+    } catch {}
     loadInitialData(token);
+    ringtoneRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3');
+    if (ringtoneRef.current) ringtoneRef.current.loop = true;
   }, [navigate]);
 
+  // ============ SOCKET : connexion unique, événements temps réel ============
   useEffect(() => {
     if (!currentUserId) return;
 
-    const socket = io('https://cbfsoko-backend.onrender.com');
+    const socket = io(BACKEND_URL);
     socketRef.current = socket;
-    socket.emit('register', currentUserId);
 
+    socket.on('connect', () => {
+      socket.emit('register', currentUserId);
+    });
+
+    socket.on('online-users', ({ userIds }: { userIds: string[] }) => {
+      setOnlineUserIds(new Set(userIds));
+    });
+    socket.on('user-online', ({ userId }: { userId: string }) => {
+      setOnlineUserIds(prev => new Set(prev).add(userId));
+    });
+    socket.on('user-offline', ({ userId }: { userId: string }) => {
+      setOnlineUserIds(prev => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+    });
+
+    // Nouveau message reçu OU confirmation de notre propre envoi
+    socket.on('new-message', (msg: Message) => {
+      const otherId = msg.senderId === currentUserId ? msg.receiverId : msg.senderId;
+
+      setMessagesByContact(prev => {
+        const list = prev[otherId] || [];
+        // Remplace le message optimiste (tempId) par la version confirmée du serveur
+        const withoutTemp = msg.tempId ? list.filter(m => m.id !== msg.tempId) : list;
+        if (withoutTemp.some(m => m.id === msg.id)) return prev;
+        return { ...prev, [otherId]: [...withoutTemp, { ...msg, pending: false }] };
+      });
+
+      setLastMessageByContact(prev => ({ ...prev, [otherId]: msg }));
+
+      // Fait remonter la conversation en haut de la liste
+      setAcceptedContacts(prev => {
+        const idx = prev.findIndex(c => c.id === otherId);
+        if (idx <= 0) return prev;
+        const copy = [...prev];
+        const [item] = copy.splice(idx, 1);
+        return [item, ...copy];
+      });
+
+      const isCurrentlyOpen = selectedContactRef.current?.id === otherId;
+
+      // Message reçu d'un tiers (pas notre propre confirmation)
+      if (msg.senderId !== currentUserId) {
+        if (isCurrentlyOpen) {
+          socket.emit('message-seen', { otherUserId: otherId });
+        } else {
+          setUnreadByContact(prev => ({ ...prev, [otherId]: (prev[otherId] || 0) + 1 }));
+          // Notification même hors de l'onglet de cette conversation (tant qu'on est sur /messages)
+          playNotificationSound();
+          if (Notification && Notification.permission === 'granted') {
+            new Notification(msg.sender?.name || 'Nouveau message', { body: isMediaFile(msg.content) ? '📎 Fichier joint' : msg.content });
+          }
+        }
+      }
+    });
+
+    socket.on('message-error', ({ tempId, message }: any) => {
+      setError(message || "Erreur d'envoi.");
+      if (tempId) {
+        setMessagesByContact(prev => {
+          const updated: Record<string, Message[]> = {};
+          for (const key in prev) {
+            updated[key] = prev[key].map(m => m.id === tempId ? { ...m, pending: false } : m);
+          }
+          return updated;
+        });
+      }
+    });
+
+    socket.on('typing', ({ senderId }: { senderId: string }) => {
+      setTypingFrom(prev => new Set(prev).add(senderId));
+    });
+    socket.on('stop-typing', ({ senderId }: { senderId: string }) => {
+      setTypingFrom(prev => {
+        const next = new Set(prev);
+        next.delete(senderId);
+        return next;
+      });
+    });
+
+    socket.on('messages-seen', ({ by }: { by: string }) => {
+      setMessagesByContact(prev => {
+        const list = prev[by];
+        if (!list) return prev;
+        return { ...prev, [by]: list.map(m => m.senderId === currentUserId ? { ...m, isRead: true } : m) };
+      });
+    });
+
+    // --- Appels (logique reprise, bugs de closure corrigés via refs) ---
     socket.on('incoming-call', (data) => {
       setIncomingCallData(data);
       setCallType(data.isVideo ? 'video' : 'audio');
@@ -163,11 +241,7 @@ export default function MessagesPage() {
 
     socket.on('ice-candidate', async ({ candidate }) => {
       if (peerConnectionRef.current && candidate) {
-        try {
-          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-        } catch {
-          // Ignorer
-        }
+        try { await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
       }
     });
 
@@ -175,23 +249,18 @@ export default function MessagesPage() {
       terminateCallState(false);
     });
 
-    return () => {
-      socket.disconnect();
-    };
+    if (Notification && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+
+    return () => { socket.disconnect(); };
   }, [currentUserId]);
 
-  useEffect(() => {
-    if (!selectedContact?.id) return;
-
-    const interval = setInterval(() => {
-      const currentToken = localStorage.getItem('token');
-      if (currentToken) {
-        fetchMessages(selectedContact.id, true);
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [selectedContact?.id]);
+  const playNotificationSound = () => {
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
+    audio.volume = 0.5;
+    audio.play().catch(() => {});
+  };
 
   const handleUnauthorized = () => {
     localStorage.removeItem('token');
@@ -202,7 +271,7 @@ export default function MessagesPage() {
   const loadInitialData = async (token: string) => {
     setLoading(true);
     try {
-      const resUsers = await fetch('https://cbfsoko-backend.onrender.com/api/messages/users/available', {
+      const resUsers = await fetch(`${BACKEND_URL}/api/messages/users/available`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const dataUsers = await resUsers.json();
@@ -212,33 +281,63 @@ export default function MessagesPage() {
         setAvailableUsers(usersList);
       }
 
-      const resContacts = await fetch('https://cbfsoko-backend.onrender.com/api/messages/contacts/accepted', {
+      const resContacts = await fetch(`${BACKEND_URL}/api/messages/contacts/accepted`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-
-      if (resContacts.status === 401) {
-        handleUnauthorized();
-        return;
-      }
+      if (resContacts.status === 401) { handleUnauthorized(); return; }
 
       const dataContacts = await resContacts.json();
       const rawContactsList = dataContacts.success && Array.isArray(dataContacts.data) ? dataContacts.data : [];
-
       const contactsList = rawContactsList.map((contact: ContactUser) => {
         const matchingUser = usersList.find((u) => u.id === contact.id);
-        return {
-          ...contact,
-          avatar: contact.avatar || matchingUser?.avatar || '',
-          updatedAt: matchingUser?.updatedAt || contact.updatedAt,
-          unreadCount: contact.unreadCount || 0
-        };
+        return { ...contact, avatar: contact.avatar || matchingUser?.avatar || '' };
       });
 
       setAcceptedContacts(contactsList);
 
+      // Charge en une fois le dernier message de chaque conversation, pour le tri et l'aperçu
+      const resAll = await fetch(`${BACKEND_URL}/api/messages`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const dataAll = await resAll.json();
+      if (dataAll.success && Array.isArray(dataAll.data)) {
+        const allMsgs: Message[] = dataAll.data;
+        const byContact: Record<string, Message[]> = {};
+        const lastByContact: Record<string, Message> = {};
+        const unread: Record<string, number> = {};
+
+        let currentUid = '';
+        try { currentUid = JSON.parse(localStorage.getItem('user') || '{}').id; } catch {}
+
+        allMsgs.forEach((m) => {
+          const otherId = m.senderId === currentUid ? m.receiverId : m.senderId;
+          if (!byContact[otherId]) byContact[otherId] = [];
+          byContact[otherId].push(m);
+          if (!lastByContact[otherId] || new Date(m.createdAt) > new Date(lastByContact[otherId].createdAt)) {
+            lastByContact[otherId] = m;
+          }
+          if (m.receiverId === currentUid && !m.isRead) {
+            unread[otherId] = (unread[otherId] || 0) + 1;
+          }
+        });
+
+        setMessagesByContact(byContact);
+        setLastMessageByContact(lastByContact);
+        setUnreadByContact(unread);
+
+        // Tri de la liste par dernier message
+        setAcceptedContacts(prev => {
+          const sorted = [...prev].sort((a, b) => {
+            const ta = lastByContact[a.id] ? new Date(lastByContact[a.id].createdAt).getTime() : 0;
+            const tb = lastByContact[b.id] ? new Date(lastByContact[b.id].createdAt).getTime() : 0;
+            return tb - ta;
+          });
+          return sorted;
+        });
+      }
+
       if (contactsList.length > 0 && window.innerWidth >= 768) {
         setSelectedContact(contactsList[0]);
-        fetchMessages(contactsList[0].id, false);
       }
     } catch (err: any) {
       setError(err.message || "Erreur lors du chargement des données.");
@@ -247,62 +346,25 @@ export default function MessagesPage() {
     }
   };
 
-  const fetchMessages = async (otherId: string, isPolling = false) => {
-    try {
-      const currentToken = localStorage.getItem('token');
-      if (!currentToken) return;
-
-      const response = await fetch(`https://cbfsoko-backend.onrender.com/api/messages/${otherId}`, {
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentToken}`
-        }
-      });
-
-      if (response.status === 401 && !isPolling) {
-        handleUnauthorized();
-        return;
-      }
-
-      const data = await response.json();
-      if (data.success && Array.isArray(data.data)) {
-        setMessages(data.data);
-        localStorage.setItem(`cbfsoko_backup_${otherId}`, JSON.stringify(data.data));
-        setAcceptedContacts(prev => prev.map(c => c.id === otherId ? { ...c, unreadCount: 0 } : c));
-      }
-    } catch {
-      const localBackup = localStorage.getItem(`cbfsoko_backup_${otherId}`);
-      if (localBackup) {
-        try {
-          setMessages(JSON.parse(localBackup));
-        } catch {
-          // Ignorer
-        }
-      }
-    }
+  const openConversation = (contact: ContactUser) => {
+    setSelectedContact(contact);
+    setShowMobileChat(true);
+    setUnreadByContact(prev => ({ ...prev, [contact.id]: 0 }));
+    socketRef.current?.emit('message-seen', { otherUserId: contact.id });
   };
 
   const handleSendContactRequest = async (targetUserId: string) => {
     setError('');
-    setSuccessMsg('');
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('https://cbfsoko-backend.onrender.com/api/messages/request', {
+      const response = await fetch(`${BACKEND_URL}/api/messages/request`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ receiverId: targetUserId })
       });
-
       const data = await response.json();
       if (data.success) {
-        setSuccessMsg("Demande envoyée !");
-        setPendingRequests(prev => [...prev, targetUserId]);
-        setAvailableUsers(prev => 
-          prev.map(u => u.id === targetUserId ? { ...u, contactStatus: 'PENDING' } : u)
-        );
+        setAvailableUsers(prev => prev.map(u => u.id === targetUserId ? { ...u, contactStatus: 'PENDING' } : u));
       } else {
         setError(data.message || "Erreur lors de l'envoi.");
       }
@@ -311,109 +373,64 @@ export default function MessagesPage() {
     }
   };
 
-  const handleOpenSupportChat = async () => {
-    setError('');
-    setSuccessMsg('');
-    try {
-      const token = localStorage.getItem('token');
-      
-      let adminUser = availableUsers.find(u => u.email?.toLowerCase() === 'aganzechristophe2007@gmail.com' || u.role?.toUpperCase() === 'SUPER_ADMIN') || 
-                      acceptedContacts.find(u => u.email?.toLowerCase() === 'aganzechristophe2007@gmail.com' || u.role?.toUpperCase() === 'SUPER_ADMIN');
-
-      if (!adminUser) {
-        adminUser = {
-          id: 'super-admin-christophe-id',
-          name: 'CBF Support',
-          email: 'aganzechristophe2007@gmail.com',
-          role: 'SUPER_ADMIN',
-          contactStatus: 'ACCEPTED'
-        };
-      } else {
-        adminUser.name = 'CBF Support';
-      }
-
-      const isAlreadyContact = acceptedContacts.some(c => c.id === adminUser?.id);
-
-      if (!isAlreadyContact) {
-        await fetch('https://cbfsoko-backend.onrender.com/api/messages/request', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ receiverId: adminUser.id })
-        }).catch(() => {});
-      }
-
-      const updatedContactObj: ContactUser = {
-        id: adminUser.id,
-        name: 'CBF Support',
-        email: 'aganzechristophe2007@gmail.com',
-        role: 'SUPER_ADMIN',
-        avatar: adminUser.avatar || '',
-        contactStatus: 'ACCEPTED'
-      };
-
-      if (!acceptedContacts.some(c => c.id === adminUser?.id)) {
-        setAcceptedContacts(prev => [updatedContactObj, ...prev]);
-      }
-
-      setSelectedContact(updatedContactObj);
-      setActiveBottomTab('chats');
-      setShowMobileChat(true);
-      setNewMessage('Bonjour je souhaite obtenir de l’aide...');
-
-      fetchMessages(adminUser.id, false);
-      setSuccessMsg("Support ouvert.");
-    } catch {
-      setError("Erreur ouverture support.");
-    }
-  };
-
-  const handleSendMessage = async (e: React.FormEvent) => {
+  // ============ ENVOI INSTANTANÉ VIA SOCKET (optimistic UI) ============
+  const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!newMessage.trim() || !selectedContact?.id || !socketRef.current) return;
 
-    if (!newMessage.trim() || !selectedContact?.id) return;
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMsg: Message = {
+      id: tempId,
+      tempId,
+      senderId: currentUserId,
+      receiverId: selectedContact.id,
+      content: newMessage,
+      createdAt: new Date().toISOString(),
+      isRead: false,
+      pending: true,
+    };
 
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('https://cbfsoko-backend.onrender.com/api/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          receiverId: selectedContact.id,
-          content: newMessage
-        })
-      });
+    setMessagesByContact(prev => ({
+      ...prev,
+      [selectedContact.id]: [...(prev[selectedContact.id] || []), optimisticMsg]
+    }));
+    setLastMessageByContact(prev => ({ ...prev, [selectedContact.id]: optimisticMsg }));
+    setAcceptedContacts(prev => {
+      const idx = prev.findIndex(c => c.id === selectedContact.id);
+      if (idx <= 0) return prev;
+      const copy = [...prev];
+      const [item] = copy.splice(idx, 1);
+      return [item, ...copy];
+    });
 
-      if (response.status === 401) {
-        handleUnauthorized();
-        return;
-      }
+    socketRef.current.emit('send-message', {
+      receiverId: selectedContact.id,
+      content: newMessage,
+      tempId,
+    });
 
-      const data = await response.json();
-      if (data.success && data.data) {
-        const updatedMessages = [...messages, data.data];
-        setMessages(updatedMessages);
-        setNewMessage('');
-        setShowEmojiPicker(false);
-        localStorage.setItem(`cbfsoko_backup_${selectedContact.id}`, JSON.stringify(updatedMessages));
-      } else {
-        setError(data.message || "Erreur d'envoi.");
-      }
-    } catch {
-      setError("Erreur réseau.");
-    }
+    socketRef.current.emit('stop-typing', { receiverId: selectedContact.id });
+    setNewMessage('');
+    setShowEmojiPicker(false);
+  };
+
+  // Indicateur de frappe : émis pendant que l'utilisateur tape, avec anti-rebond
+  const typingTimeoutRef = useRef<any>(null);
+  const handleTyping = (value: string) => {
+    setNewMessage(value);
+    if (!selectedContact?.id || !socketRef.current) return;
+
+    socketRef.current.emit('typing', { receiverId: selectedContact.id });
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      socketRef.current?.emit('stop-typing', { receiverId: selectedContact.id });
+    }, 2000);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedContact?.id) return;
-
     setError('');
     try {
       const token = localStorage.getItem('token');
@@ -421,17 +438,17 @@ export default function MessagesPage() {
       formData.append('receiverId', selectedContact.id);
       formData.append('media', file);
 
-      const response = await fetch('https://cbfsoko-backend.onrender.com/api/messages/media', {
+      const response = await fetch(`${BACKEND_URL}/api/messages/media`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
       });
-
       const data = await response.json();
       if (data.success && data.data) {
-        const updatedMessages = [...messages, data.data];
-        setMessages(updatedMessages);
-        localStorage.setItem(`cbfsoko_backup_${selectedContact.id}`, JSON.stringify(updatedMessages));
+        setMessagesByContact(prev => ({
+          ...prev,
+          [selectedContact.id]: [...(prev[selectedContact.id] || []), data.data]
+        }));
       } else {
         setError(data.message || "Erreur lors de l'envoi du fichier.");
       }
@@ -451,11 +468,8 @@ export default function MessagesPage() {
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
-
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach(track => track.stop());
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
@@ -465,9 +479,7 @@ export default function MessagesPage() {
       mediaRecorder.start();
       setIsRecording(true);
       setRecordingTime(0);
-      timerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
-      }, 1000);
+      recordTimerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
     } catch {
       setError("Impossible d'accéder au microphone.");
     }
@@ -477,30 +489,29 @@ export default function MessagesPage() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      clearInterval(timerRef.current);
+      clearInterval(recordTimerRef.current);
     }
   };
 
   const sendAudioFile = async (blob: Blob) => {
     if (!selectedContact?.id) return;
-
     try {
       const token = localStorage.getItem('token');
       const formData = new FormData();
       formData.append('receiverId', selectedContact.id);
       formData.append('media', blob, `voice-note-${Date.now()}.webm`);
 
-      const response = await fetch('https://cbfsoko-backend.onrender.com/api/messages/media', {
+      const response = await fetch(`${BACKEND_URL}/api/messages/media`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
       });
-
       const data = await response.json();
       if (data.success && data.data) {
-        const updatedMessages = [...messages, data.data];
-        setMessages(updatedMessages);
-        localStorage.setItem(`cbfsoko_backup_${selectedContact.id}`, JSON.stringify(updatedMessages));
+        setMessagesByContact(prev => ({
+          ...prev,
+          [selectedContact.id]: [...(prev[selectedContact.id] || []), data.data]
+        }));
       } else {
         setError(data.message || "Erreur envoi note vocale.");
       }
@@ -517,8 +528,13 @@ export default function MessagesPage() {
 
   const startCallTimer = () => {
     setCallDuration(0);
+    callDurationRef.current = 0;
     callTimerRef.current = setInterval(() => {
-      setCallDuration(prev => prev + 1);
+      setCallDuration(prev => {
+        const next = prev + 1;
+        callDurationRef.current = next;
+        return next;
+      });
     }, 1000);
   };
 
@@ -530,34 +546,31 @@ export default function MessagesPage() {
   };
 
   const isMediaFile = (content: string) => {
-    return content.startsWith('uploads/') || content.includes('voice-note') || content.match(/\.(webm|mp3|wav|ogg|mp4|png|jpg|jpeg|pdf|docx)$/i);
+    return content.startsWith('uploads/') || content.includes('voice-note') || /\.(webm|mp3|wav|ogg|mp4|png|jpg|jpeg|pdf|docx)$/i.test(content);
   };
 
   const renderMessageContent = (content: string) => {
     if (!isMediaFile(content)) {
       return <p className="whitespace-pre-wrap break-words leading-relaxed">{content}</p>;
     }
-
-    const fullUrl = `https://cbfsoko-backend.onrender.com/${content}`;
-    const isImage = content.match(/\.(png|jpg|jpeg|gif|webp)$/i);
-    const isAudio = content.match(/\.(webm|mp3|wav|ogg)$/i) || content.includes('voice-note');
+    const fullUrl = `${BACKEND_URL}/${content}`;
+    const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(content);
+    const isAudio = /\.(webm|mp3|wav|ogg)$/i.test(content) || content.includes('voice-note');
 
     if (isImage) {
       return (
         <a href={fullUrl} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl">
-          <img src={fullUrl} alt="Média" className="max-w-xs max-h-60 object-cover rounded-xl hover:opacity-95 transition" />
+          <img src={fullUrl} alt="Média" className="max-w-[200px] sm:max-w-xs max-h-60 object-cover rounded-xl hover:opacity-95 transition" />
         </a>
       );
     }
-
     if (isAudio) {
       return (
-        <div className="flex items-center gap-3 min-w-[200px]">
-          <audio src={fullUrl} controls className="w-full h-10 accent-orange-500" />
+        <div className="flex items-center gap-2 min-w-[180px] sm:min-w-[220px]">
+          <audio src={fullUrl} controls className="w-full h-9" />
         </div>
       );
     }
-
     return (
       <a href={fullUrl} target="_blank" rel="noopener noreferrer" className="underline font-semibold flex items-center gap-2 py-1">
         <Paperclip className="w-4 h-4" /> Fichier joint
@@ -565,16 +578,15 @@ export default function MessagesPage() {
     );
   };
 
+  // ============ APPELS WEBRTC (logique conservée, bugs corrigés) ============
   const startCall = async (isVideo: boolean) => {
     if (!selectedContact?.id) return;
     setIsCallingOut(true);
     setCallType(isVideo ? 'video' : 'audio');
+    callTypeRef.current = isVideo ? 'video' : 'audio';
 
     const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]
     });
     peerConnectionRef.current = pc;
 
@@ -587,11 +599,8 @@ export default function MessagesPage() {
         setIsCallingOut(false);
         setInCall(true);
         startCallTimer();
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-        }
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
       };
-
       pc.onicecandidate = (event) => {
         if (event.candidate && socketRef.current) {
           socketRef.current.emit('ice-candidate', { to: selectedContact.id, candidate: event.candidate });
@@ -601,14 +610,7 @@ export default function MessagesPage() {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      if (socketRef.current) {
-        socketRef.current.emit('call-user', {
-          to: selectedContact.id,
-          offer,
-          from: currentUserId,
-          isVideo
-        });
-      }
+      socketRef.current?.emit('call-user', { to: selectedContact.id, offer, from: currentUserId, isVideo });
     } catch {
       setError("Erreur d'accès à la caméra ou au micro pour l'appel.");
       terminateCallState(false);
@@ -628,13 +630,11 @@ export default function MessagesPage() {
     setInCall(true);
     const isVideoCall = incomingCallData.isVideo;
     setCallType(isVideoCall ? 'video' : 'audio');
+    callTypeRef.current = isVideoCall ? 'video' : 'audio';
     startCallTimer();
 
     const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]
     });
     peerConnectionRef.current = pc;
 
@@ -644,11 +644,8 @@ export default function MessagesPage() {
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
       pc.ontrack = (event) => {
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-        }
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
       };
-
       pc.onicecandidate = (event) => {
         if (event.candidate && socketRef.current) {
           socketRef.current.emit('ice-candidate', { to: incomingCallData.from, candidate: event.candidate });
@@ -659,9 +656,7 @@ export default function MessagesPage() {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      if (socketRef.current) {
-        socketRef.current.emit('make-answer', { to: incomingCallData.from, answer });
-      }
+      socketRef.current?.emit('make-answer', { to: incomingCallData.from, answer });
       setIncomingCallData(null);
     } catch {
       setError("Impossible d'établir l'appel.");
@@ -677,568 +672,394 @@ export default function MessagesPage() {
     setIncomingCallData(null);
   };
 
-  const terminateCallState = async (sendSummary = true) => {
+  // Corrigé : lit callDurationRef/callTypeRef/selectedContactRef, toujours à jour
+  // même appelé depuis le listener socket enregistré une seule fois.
+  const terminateCallState = (sendSummary = true) => {
     stopRingtone();
     stopCallTimer();
 
-    if (sendSummary && callDuration > 0 && selectedContact?.id) {
-      const mins = Math.floor(callDuration / 60);
-      const secs = callDuration % 60;
-      const timeStr = mins > 0 ? `${mins} min ${secs} s` : `${secs} s`;
-      const summaryText = `📞 Appel ${callType === 'video' ? 'vidéo' : 'audio'} terminé (${timeStr})`;
+    const finalDuration = callDurationRef.current;
+    const finalType = callTypeRef.current;
+    const contact = selectedContactRef.current;
 
-      try {
-        const token = localStorage.getItem('token');
-        await fetch('https://cbfsoko-backend.onrender.com/api/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            receiverId: selectedContact.id,
-            content: summaryText
-          })
-        });
-        fetchMessages(selectedContact.id);
-      } catch {
-        // Ignorer
-      }
+    if (sendSummary && finalDuration > 0 && contact?.id && socketRef.current) {
+      const mins = Math.floor(finalDuration / 60);
+      const secs = finalDuration % 60;
+      const timeStr = mins > 0 ? `${mins} min ${secs} s` : `${secs} s`;
+      const summaryText = `📞 Appel ${finalType === 'video' ? 'vidéo' : 'audio'} terminé (${timeStr})`;
+
+      const tempId = `temp-call-${Date.now()}`;
+      socketRef.current.emit('send-message', { receiverId: contact.id, content: summaryText, tempId });
     }
 
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
-    if (localVideoRef.current && localVideoRef.current.srcObject) {
-      const stream = localVideoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
-    }
-
     setInCall(false);
     setIsCallingOut(false);
-    setIncomingCallData(null);
     setCallDuration(0);
+    callDurationRef.current = 0;
   };
 
-  const hangUpCall = () => {
-    const targetId = selectedContact?.id || incomingCallData?.from;
-    if (targetId && socketRef.current) {
-      socketRef.current.emit('end-call', { to: targetId });
+  const endCall = () => {
+    if (selectedContact?.id && socketRef.current) {
+      socketRef.current.emit('end-call', { to: selectedContact.id });
     }
     terminateCallState(true);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    navigate('/login');
-  };
+  // ============ Filtrage / recherche ============
+  const filteredContacts = useMemo(() => {
+    if (!searchQuery.trim()) return acceptedContacts;
+    return acceptedContacts.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [acceptedContacts, searchQuery]);
+
+  const filteredAvailableUsers = useMemo(() => {
+    const base = availableUsers.filter(u => !acceptedContacts.some(c => c.id === u.id));
+    if (!searchQuery.trim()) return base;
+    return base.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [availableUsers, acceptedContacts, searchQuery]);
+
+  const isTypingInSelected = selectedContact ? typingFrom.has(selectedContact.id) : false;
 
   if (loading) {
     return (
-      <div className={`min-h-screen flex items-center justify-center font-sans ${isLightMode ? 'bg-slate-50 text-slate-800' : 'bg-zinc-950 text-zinc-100'}`}>
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-neutral-950 text-white' : 'bg-neutral-50 text-neutral-900'}`}>
         <div className="flex flex-col items-center gap-3">
-          <div className="flex items-center gap-1.5 p-4">
-            <div className="w-3 h-3 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-            <div className="w-3 h-3 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-            <div className="w-3 h-3 bg-orange-500 rounded-full animate-bounce"></div>
-          </div>
-          <span className="text-sm font-medium opacity-75">Chargement de vos messages...</span>
+          <div className="w-10 h-10 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs text-neutral-500">Chargement des messages...</span>
         </div>
       </div>
     );
   }
 
-  const currentUserAvatarUrl = getAvatarUrl(userAvatar);
-
   return (
-    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${isLightMode ? 'bg-slate-100 text-slate-900' : 'bg-zinc-950 text-zinc-100'}`}>
-      
-      {/* Fenêtre modale d'appel sortant (en attente) */}
-      {isCallingOut && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-3xl max-w-sm w-full text-center shadow-2xl flex flex-col items-center gap-4">
-            <div className="w-20 h-20 rounded-full bg-orange-500/20 text-orange-500 flex items-center justify-center animate-pulse text-2xl font-bold">
-              <Phone className="w-8 h-8 animate-bounce" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-zinc-100">Appel en cours...</h3>
-              <p className="text-sm text-zinc-400 mt-1">Sonnerie chez {selectedContact?.name || 'le destinataire'}...</p>
-            </div>
-            <button
-              onClick={() => {
-                if (socketRef.current && selectedContact?.id) {
-                  socketRef.current.emit('end-call', { to: selectedContact.id });
-                }
-                terminateCallState(false);
-              }}
-              className="mt-2 w-full bg-rose-600 hover:bg-rose-500 text-white py-3 rounded-2xl font-bold transition flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <PhoneOff className="w-5 h-5" /> Annuler l'appel
-            </button>
-          </div>
+    <div className={`h-screen flex flex-col transition-colors duration-300 ${darkMode ? 'bg-neutral-950 text-white' : 'bg-neutral-50 text-neutral-900'}`}>
+
+      {/* HEADER */}
+      <header className={`flex-shrink-0 border-b px-4 py-3 flex items-center justify-between ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+        <div className="flex items-center gap-2">
+          <Link to="/" className={`p-2 rounded-full transition ${darkMode ? 'hover:bg-neutral-800 text-neutral-300' : 'hover:bg-neutral-100 text-neutral-700'}`}>
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+          <h1 className="text-base font-extrabold">Messages</h1>
         </div>
-      )}
-
-      {/* Fenêtre modale d'appel entrant avec sonnerie */}
-      {incomingCallData && !inCall && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-3xl max-w-sm w-full text-center shadow-2xl flex flex-col items-center gap-4">
-            <div className="w-20 h-20 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center animate-pulse">
-              <Phone className="w-8 h-8 animate-bounce" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-zinc-100">Appel {incomingCallData.isVideo ? 'vidéo' : 'audio'} entrant</h3>
-              <p className="text-sm text-zinc-400 mt-1">Un utilisateur vous appelle...</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3 w-full mt-2">
-              <button
-                onClick={rejectIncomingCall}
-                className="bg-rose-600 hover:bg-rose-500 text-white py-3 rounded-2xl font-bold transition flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <PhoneOff className="w-4 h-4" /> Refuser
-              </button>
-              <button
-                onClick={acceptIncomingCall}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-bold transition flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Phone className="w-4 h-4" /> Décrocher
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Écran d'appel en cours (Actif) */}
-      {inCall && (
-        <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-between p-4 sm:p-8">
-          <div className="w-full max-w-4xl flex items-center justify-between text-white py-4">
-            <h2 className="text-base sm:text-lg font-bold">Appel en cours ({formatTime(callDuration)})</h2>
-            <span className="bg-orange-600 px-3 py-1 rounded-full text-xs font-bold uppercase">{callType}</span>
-          </div>
-
-          <div className="flex-1 w-full max-w-4xl flex items-center justify-center relative rounded-3xl overflow-hidden bg-zinc-900 my-2">
-            <video ref={remoteVideoRef} autoPlay playsInline className={`w-full h-full object-cover ${callType === 'audio' ? 'hidden' : 'block'}`} />
-            {callType === 'audio' && (
-              <div className="flex flex-col items-center gap-4 text-zinc-300">
-                <div className="w-28 h-28 rounded-full bg-orange-600/20 border-2 border-orange-500 flex items-center justify-center animate-pulse text-orange-500 text-3xl font-bold">
-                  {selectedContact?.name ? selectedContact.name.charAt(0).toUpperCase() : <UserIcon className="w-10 h-10" />}
-                </div>
-                <p className="text-xl font-semibold">{selectedContact?.name || 'En communication'}</p>
-              </div>
-            )}
-            <div className={`absolute bottom-4 right-4 w-32 h-24 sm:w-48 sm:h-36 rounded-2xl overflow-hidden border-2 border-white/20 shadow-lg bg-zinc-950 ${callType === 'audio' ? 'hidden' : 'block'}`}>
-              <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-            </div>
-          </div>
-
-          <div className="py-4 flex items-center justify-center gap-4">
-            <button
-              onClick={hangUpCall}
-              className="bg-rose-600 hover:bg-rose-500 text-white px-6 py-3.5 rounded-full font-bold flex items-center gap-2 shadow-lg transition cursor-pointer"
-            >
-              <PhoneOff className="w-5 h-5" /> Raccrocher
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* En-tête de la page (Sticky immobile en haut) */}
-      <header className={`border px-4 lg:px-8 py-3.5 sticky top-0 z-40 backdrop-blur-md transition-colors duration-200 ${
-        isLightMode ? 'border-slate-200/80 bg-white/90 shadow-xs' : 'border-zinc-800/80 bg-zinc-900/90 shadow-md'
-      }`}>
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 w-full">
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-orange-500/10 border-2 border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-base overflow-hidden relative shadow-inner">
-              {currentUserAvatarUrl ? (
-                <img 
-                  src={currentUserAvatarUrl} 
-                  alt={userName} 
-                  className="w-full h-full object-cover bg-white dark:bg-zinc-900" 
-                  onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} 
-                />
-              ) : (
-                <span className="font-bold text-orange-500">
-                  {userName ? userName.charAt(0).toUpperCase() : <UserIcon className="w-5 h-5" />}
-                </span>
-              )}
-            </div>
-            <div>
-              <h1 className={`text-lg sm:text-xl font-extrabold tracking-tight ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>Messagerie</h1>
-              <p className="text-xs text-orange-500 font-semibold uppercase tracking-wider">{userRole || 'Membre'}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-2.5">
-            <button
-              onClick={handleOpenSupportChat}
-              className={`px-3.5 py-2 rounded-xl border transition-all duration-200 cursor-pointer flex items-center gap-2 font-bold text-xs sm:text-sm hover:scale-105 active:scale-95 ${
-                isLightMode ? 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100' : 'bg-zinc-900 text-orange-400 border-zinc-800 hover:bg-zinc-800'
-              }`}
-              title="Support Client"
-            >
-              <Headphones className="w-4 h-4" /> Support
-            </button>
-
-            <button
-              onClick={() => setIsLightMode(!isLightMode)}
-              className={`p-2.5 rounded-xl transition-all duration-200 cursor-pointer border hover:scale-105 active:scale-95 ${
-                isLightMode ? 'bg-slate-50 text-amber-500 border-slate-200 hover:bg-slate-100' : 'bg-zinc-900 text-amber-400 border-zinc-800 hover:bg-zinc-800'
-              }`}
-              title="Changer de thème"
-            >
-              {isLightMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5 text-amber-400" />}
-            </button>
-          </div>
-        </div>
+        <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-full border transition ${darkMode ? 'bg-neutral-950 border-neutral-800 text-yellow-400' : 'bg-white border-neutral-300 text-neutral-800'}`}>
+          {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4 text-orange-600" />}
+        </button>
       </header>
 
-      <main className="max-w-7xl w-full mx-auto p-2 sm:p-6 lg:p-8 flex-1 flex flex-col pb-24 text-sm sm:text-base">
-        
-        {error && (
-          <div className="mb-4 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-sm flex items-center gap-3 animate-fade-in shadow-xs">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <span className="font-semibold">{error}</span>
-          </div>
-        )}
+      {error && (
+        <div className="flex-shrink-0 bg-red-950/40 border-b border-red-900 text-red-400 text-[11px] font-semibold px-4 py-2 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError('')}><X className="w-3.5 h-3.5" /></button>
+        </div>
+      )}
 
-        {successMsg && (
-          <div className="mb-4 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-sm flex items-center gap-3 animate-fade-in shadow-xs">
-            <CheckCircle className="w-5 h-5 flex-shrink-0" />
-            <span className="font-semibold">{successMsg}</span>
-          </div>
-        )}
+      {/* CORPS : 2 panneaux */}
+      <div className="flex-1 flex overflow-hidden">
 
-        {activeBottomTab === 'chats' ? (
-          <div className={`border rounded-3xl overflow-hidden flex-1 shadow-md grid grid-cols-1 md:grid-cols-12 min-h-[550px] transition-all duration-300 ${
-            isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'
-          }`}>
-            
-            {/* Sidebar des conversations */}
-            <div className={`md:col-span-4 border-r flex flex-col ${showMobileChat ? 'hidden md:flex' : 'flex'} ${
-              isLightMode ? 'border-slate-200 bg-slate-50/50' : 'border-zinc-800 bg-zinc-900/50'
-            }`}>
-              
-              <div className="p-4 border-b border-slate-200/80 dark:border-zinc-800">
-                <div className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border transition-all focus-within:ring-2 focus-within:ring-orange-500/30 ${
-                  isLightMode ? 'bg-white border-slate-300 shadow-2xs' : 'bg-zinc-950 border-zinc-700'
-                }`}>
-                  <Search className="w-4 h-4 text-zinc-400" />
-                  <input
-                    type="text"
-                    placeholder="Rechercher une discussion..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="bg-transparent border-none outline-none w-full text-sm"
-                  />
-                </div>
-              </div>
+        {/* LISTE (panneau gauche) */}
+        <div className={`${showMobileChat ? 'hidden' : 'flex'} md:flex flex-col w-full md:w-[360px] flex-shrink-0 border-r ${darkMode ? 'border-neutral-800' : 'border-neutral-200'}`}>
 
-              <div className="overflow-y-auto flex-1 divide-y divide-slate-100 dark:divide-zinc-800/60">
-                {acceptedContacts.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
-                  <div className="p-8 text-center text-zinc-400 text-xs">
-                    Aucune discussion active. Allez dans l'onglet "Membres" pour contacter quelqu'un.
-                  </div>
-                ) : (
-                  acceptedContacts
-                    .filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                    .map((contact) => {
-                      const isSelected = selectedContact?.id === contact.id;
-                      const avatarUrl = getAvatarUrl(contact.avatar);
-                      const online = isUserOnline(contact.updatedAt);
-
-                      return (
-                        <div
-                          key={contact.id}
-                          onClick={() => {
-                            setSelectedContact(contact);
-                            setShowMobileChat(true);
-                            fetchMessages(contact.id, false);
-                          }}
-                          className={`p-4 flex items-center gap-3.5 cursor-pointer transition-all ${
-                            isSelected 
-                              ? (isLightMode ? 'bg-orange-500/10 border-l-4 border-orange-500' : 'bg-orange-500/20 border-l-4 border-orange-500') 
-                              : (isLightMode ? 'hover:bg-slate-100/70' : 'hover:bg-zinc-800/50')
-                          }`}
-                        >
-                          <div className="relative">
-                            <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border-2 border-orange-500/30 text-orange-500 flex items-center justify-center font-bold overflow-hidden shadow-xs flex-shrink-0">
-                              {avatarUrl ? (
-                                <img src={avatarUrl} alt={contact.name} className="w-full h-full object-cover" />
-                              ) : (
-                                <span>{contact.name ? contact.name.charAt(0).toUpperCase() : <UserIcon className="w-5 h-5" />}</span>
-                              )}
-                            </div>
-                            {online && (
-                              <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-zinc-900 rounded-full"></span>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-1">
-                              <h3 className={`font-bold text-sm truncate ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>
-                                {contact.name}
-                              </h3>
-                              {contact.unreadCount && contact.unreadCount > 0 ? (
-                                <span className="bg-orange-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                  {contact.unreadCount}
-                                </span>
-                              ) : null}
-                            </div>
-                            <p className="text-xs text-zinc-400 truncate">
-                              {online ? 'En ligne' : 'Hors ligne'}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })
-                )}
-              </div>
+          {/* Recherche */}
+          <div className="p-3 flex-shrink-0">
+            <div className={`flex items-center gap-2 rounded-full border px-3 py-2 ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-300'}`}>
+              <Search className="w-3.5 h-3.5 text-neutral-500 flex-shrink-0" />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Rechercher..."
+                className="w-full bg-transparent text-xs outline-none placeholder-neutral-500"
+              />
             </div>
+          </div>
 
-            {/* Zone de discussion principale */}
-            <div className={`md:col-span-8 flex flex-col ${!showMobileChat && window.innerWidth < 768 ? 'hidden md:flex' : 'flex'}`}>
-              {selectedContact ? (
-                <>
-                  <div className={`p-4 border-b flex items-center justify-between ${
-                    isLightMode ? 'border-slate-200 bg-slate-50/80' : 'border-zinc-800 bg-zinc-900/80'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <button 
-                        onClick={() => setShowMobileChat(false)} 
-                        className="md:hidden p-2 rounded-xl bg-slate-200 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300"
-                      >
-                        <ArrowLeft className="w-5 h-5" />
-                      </button>
+          {/* Onglets Chats / Personnes */}
+          <div className={`flex flex-shrink-0 px-3 gap-1 border-b ${darkMode ? 'border-neutral-800' : 'border-neutral-200'}`}>
+            <button
+              onClick={() => setActiveBottomTab('chats')}
+              className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-wide border-b-2 transition ${
+                activeBottomTab === 'chats' ? 'border-orange-500 text-orange-500' : 'border-transparent text-neutral-500'
+              }`}
+            >
+              Discussions
+            </button>
+            <button
+              onClick={() => setActiveBottomTab('people')}
+              className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-wide border-b-2 transition ${
+                activeBottomTab === 'people' ? 'border-orange-500 text-orange-500' : 'border-transparent text-neutral-500'
+              }`}
+            >
+              Contacts
+            </button>
+          </div>
 
-                      <div className="w-10 h-10 rounded-xl bg-orange-500/20 text-orange-500 flex items-center justify-center font-bold overflow-hidden">
-                        {selectedContact.avatar ? (
-                          <img src={getAvatarUrl(selectedContact.avatar)} alt={selectedContact.name} className="w-full h-full object-cover" />
-                        ) : (
-                          selectedContact.name.charAt(0).toUpperCase()
-                        )}
-                      </div>
-                      <div>
-                        <h2 className={`font-bold text-base ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>
-                          {selectedContact.name}
-                        </h2>
-                        <p className="text-xs text-emerald-500 font-medium">
-                          {isUserOnline(selectedContact.updatedAt) ? 'En ligne' : 'Hors ligne'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => startCall(false)}
-                        className="p-2.5 rounded-xl bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition cursor-pointer"
-                        title="Appel audio"
-                      >
-                        <Phone className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => startCall(true)}
-                        className="p-2.5 rounded-xl bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition cursor-pointer"
-                        title="Appel vidéo"
-                      >
-                        <Video className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 p-4 overflow-y-auto space-y-4 flex flex-col">
-                    {messages.length === 0 ? (
-                      <div className="flex-1 flex flex-col items-center justify-center text-center text-zinc-400 p-6">
-                        <MessageCircle className="w-14 h-14 stroke-1 mb-2 text-orange-500/40" />
-                        <p className="text-sm font-medium">Aucun message pour le moment.</p>
-                        <p className="text-xs text-zinc-500 mt-1">Envoyez un message pour lancer la discussion !</p>
-                      </div>
-                    ) : (
-                      messages.map((msg) => {
-                        const isMe = msg.senderId === currentUserId;
-                        return (
-                          <div key={msg.id || Math.random()} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[80%] sm:max-w-[65%] p-3.5 rounded-2xl shadow-xs text-sm ${
-                              isMe 
-                                ? 'bg-orange-600 text-white rounded-br-none' 
-                                : (isLightMode ? 'bg-slate-200 text-slate-800 rounded-bl-none' : 'bg-zinc-800 text-zinc-100 rounded-bl-none')
-                            }`}>
-                              {renderMessageContent(msg.content)}
-                              <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${isMe ? 'text-orange-200' : 'text-zinc-400'}`}>
-                                <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                {isMe && <CheckCheck className="w-3.5 h-3.5" />}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                    <div ref={messagesEndRef} />
-                  </div>
-
-                  {/* Barre de saisie */}
-                  <div className={`p-3 border-t relative ${isLightMode ? 'border-slate-200 bg-white' : 'border-zinc-800 bg-zinc-900'}`}>
-                    {showEmojiPicker && (
-                      <div className={`absolute bottom-20 left-4 p-3 rounded-2xl shadow-2xl border grid grid-cols-8 gap-2 z-30 ${
-                        isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-700'
-                      }`}>
-                        {COMMON_EMOJIS.map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => setNewMessage(prev => prev + emoji)}
-                            className="text-xl p-1.5 hover:scale-125 transition transform cursor-pointer"
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {isRecording ? (
-                      <div className="flex items-center justify-between px-4 py-3 bg-orange-500/10 border border-orange-500/30 rounded-2xl">
-                        <div className="flex items-center gap-3">
-                          <div className="w-3.5 h-3.5 rounded-full bg-rose-600 animate-ping"></div>
-                          <span className="font-bold text-orange-600 text-sm">Enregistrement vocal : {formatTime(recordingTime)}</span>
-                        </div>
-                        <button
-                          onClick={stopRecording}
-                          className="bg-rose-600 text-white px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 cursor-pointer"
-                        >
-                          <Square className="w-4 h-4" /> Envoyer vocal
-                        </button>
-                      </div>
-                    ) : (
-                      <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                        <input
-                          type="file"
-                          ref={fileInputRef}
-                          onChange={handleFileUpload}
-                          className="hidden"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="p-2.5 rounded-xl bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition cursor-pointer"
-                          title="Joindre un fichier ou une image"
-                        >
-                          <Paperclip className="w-5 h-5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                          className="p-2.5 rounded-xl bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition cursor-pointer"
-                          title="Insérer un émoji"
-                        >
-                          <Smile className="w-5 h-5" />
-                        </button>
-
-                        <input
-                          type="text"
-                          placeholder="Écrivez votre message..."
-                          value={newMessage}
-                          onChange={(e) => setNewMessage(e.target.value)}
-                          className={`flex-1 px-4 py-3 rounded-2xl border text-sm outline-none transition ${
-                            isLightMode ? 'bg-slate-50 border-slate-300 focus:border-orange-500' : 'bg-zinc-950 border-zinc-700 focus:border-orange-500'
-                          }`}
-                        />
-
-                        {newMessage.trim() ? (
-                          <button
-                            type="submit"
-                            className="p-3 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white transition shadow-md shadow-orange-600/20 cursor-pointer"
-                          >
-                            <Send className="w-5 h-5" />
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={startRecording}
-                            className="p-3 rounded-2xl bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition cursor-pointer"
-                            title="Enregistrer un message vocal"
-                          >
-                            <Mic className="w-5 h-5" />
-                          </button>
-                        )}
-                      </form>
-                    )}
-                  </div>
-                </>
+          {/* Liste défilante */}
+          <div className="flex-1 overflow-y-auto">
+            {activeBottomTab === 'chats' ? (
+              filteredContacts.length === 0 ? (
+                <div className="text-center py-10 px-4 text-xs text-neutral-500">Aucune conversation. Ajoutez un contact dans l'onglet "Contacts".</div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-400">
-                  <MessageCircle className="w-16 h-16 stroke-1 mb-3 text-orange-500/40 animate-pulse" />
-                  <h3 className="font-bold text-base text-zinc-300">Sélectionnez une discussion</h3>
-                  <p className="text-xs text-zinc-500 mt-1 max-w-xs">Choisissez un contact dans la liste pour commencer à échanger en temps réel.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          /* Onglet Membres disponibles */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {availableUsers.map((user) => {
-              const avatarUrl = getAvatarUrl(user.avatar);
-              const isPending = pendingRequests.includes(user.id) || user.contactStatus === 'PENDING';
+                filteredContacts.map((contact) => {
+                  const lastMsg = lastMessageByContact[contact.id];
+                  const unread = unreadByContact[contact.id] || 0;
+                  const isOnline = onlineUserIds.has(contact.id);
+                  const isTypingHere = typingFrom.has(contact.id);
+                  const isSelected = selectedContact?.id === contact.id;
 
-              return (
-                <div key={user.id} className={`p-5 rounded-3xl border shadow-xs flex flex-col justify-between gap-4 transition ${
-                  isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-800'
-                }`}>
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-14 h-14 rounded-2xl bg-orange-500/10 border-2 border-orange-500/30 text-orange-500 flex items-center justify-center font-bold text-lg overflow-hidden flex-shrink-0">
-                      {avatarUrl ? (
-                        <img src={avatarUrl} alt={user.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <span>{user.name ? user.name.charAt(0).toUpperCase() : <UserIcon className="w-6 h-6" />}</span>
-                      )}
+                  let previewText = 'Démarrez la conversation';
+                  if (isTypingHere) previewText = 'En train d\'écrire...';
+                  else if (lastMsg) previewText = isMediaFile(lastMsg.content) ? '📎 Fichier joint' : lastMsg.content;
+
+                  return (
+                    <button
+                      key={contact.id}
+                      onClick={() => openConversation(contact)}
+                      className={`w-full flex items-center gap-3 px-3 py-3 transition text-left ${
+                        isSelected ? (darkMode ? 'bg-neutral-900' : 'bg-orange-50') : (darkMode ? 'hover:bg-neutral-900/60' : 'hover:bg-neutral-100')
+                      }`}
+                    >
+                      <div className="relative flex-shrink-0">
+                        <div className="w-11 h-11 rounded-full bg-orange-600 text-white font-bold text-xs flex items-center justify-center overflow-hidden">
+                          {contact.avatar ? (
+                            <img src={getAvatarUrl(contact.avatar)} alt={contact.name} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} />
+                          ) : getInitials(contact.name)}
+                        </div>
+                        {isOnline && (
+                          <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 ${darkMode ? 'border-neutral-950' : 'border-white'}`} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-sm truncate">{contact.name}</span>
+                          {lastMsg && <span className="text-[10px] text-neutral-500 flex-shrink-0">{new Date(lastMsg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>}
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-[11px] truncate ${isTypingHere ? 'text-orange-500 font-semibold' : 'text-neutral-500'}`}>{previewText}</span>
+                          {unread > 0 && (
+                            <span className="bg-orange-600 text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0">{unread}</span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )
+            ) : (
+              filteredAvailableUsers.length === 0 ? (
+                <div className="text-center py-10 px-4 text-xs text-neutral-500">Aucun autre utilisateur disponible.</div>
+              ) : (
+                filteredAvailableUsers.map((u) => (
+                  <div key={u.id} className={`flex items-center gap-3 px-3 py-3 ${darkMode ? 'hover:bg-neutral-900/60' : 'hover:bg-neutral-100'}`}>
+                    <div className="w-11 h-11 rounded-full bg-neutral-700 text-white font-bold text-xs flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {u.avatar ? <img src={getAvatarUrl(u.avatar)} alt={u.name} className="w-full h-full object-cover" /> : getInitials(u.name)}
                     </div>
-                    <div className="min-w-0">
-                      <h3 className={`font-bold text-base truncate ${isLightMode ? 'text-slate-900' : 'text-zinc-100'}`}>
-                        {user.name}
-                      </h3>
-                      <p className="text-xs text-orange-500 font-semibold uppercase">{user.role || 'Membre'}</p>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-bold text-sm truncate block">{u.name}</span>
+                      <span className="text-[11px] text-neutral-500 truncate block">{u.role === 'SUPER_ADMIN' ? 'Support CBF SOKO' : u.email}</span>
                     </div>
+                    {u.contactStatus === 'PENDING' ? (
+                      <span className="text-[10px] font-bold text-neutral-500 flex-shrink-0">En attente</span>
+                    ) : (
+                      <button
+                        onClick={() => handleSendContactRequest(u.id)}
+                        className="p-2 rounded-full bg-orange-600/10 text-orange-500 hover:bg-orange-600 hover:text-white transition flex-shrink-0"
+                        title="Ajouter"
+                      >
+                        <UserPlus className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
+                ))
+              )
+            )}
+          </div>
+        </div>
 
-                  <button
-                    onClick={() => handleSendContactRequest(user.id)}
-                    disabled={isPending}
-                    className={`w-full py-3 rounded-2xl font-bold text-sm transition flex items-center justify-center gap-2 cursor-pointer ${
-                      isPending 
-                        ? 'bg-zinc-500/20 text-zinc-400 cursor-not-allowed' 
-                        : 'bg-orange-600 hover:bg-orange-500 text-white shadow-md shadow-orange-600/20'
-                    }`}
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    {isPending ? 'Demande envoyée' : 'Ajouter aux contacts'}
+        {/* CHAT (panneau droit) */}
+        <div className={`${showMobileChat ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-w-0`}>
+          {!selectedContact ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-2 text-neutral-500">
+              <UserIcon className="w-10 h-10" />
+              <span className="text-xs">Sélectionnez une conversation</span>
+            </div>
+          ) : (
+            <>
+              {/* En-tête du chat */}
+              <div className={`flex-shrink-0 flex items-center justify-between px-4 py-3 border-b ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <button onClick={() => setShowMobileChat(false)} className="md:hidden p-1.5 rounded-full hover:bg-neutral-800/50 flex-shrink-0">
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <div className="relative flex-shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-orange-600 text-white font-bold text-xs flex items-center justify-center overflow-hidden">
+                      {selectedContact.avatar ? (
+                        <img src={getAvatarUrl(selectedContact.avatar)} alt={selectedContact.name} className="w-full h-full object-cover" />
+                      ) : getInitials(selectedContact.name)}
+                    </div>
+                    {onlineUserIds.has(selectedContact.id) && (
+                      <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 ${darkMode ? 'border-neutral-900' : 'border-white'}`} />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <span className="font-bold text-sm block truncate">{selectedContact.name}</span>
+                    <span className="text-[10px] text-neutral-500">
+                      {isTypingInSelected ? <span className="text-orange-500 font-semibold">En train d'écrire...</span> : (onlineUserIds.has(selectedContact.id) ? 'En ligne' : 'Hors ligne')}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button onClick={() => startCall(false)} className={`p-2 rounded-full transition ${darkMode ? 'hover:bg-neutral-800 text-neutral-300' : 'hover:bg-neutral-100 text-neutral-700'}`}>
+                    <Phone className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => startCall(true)} className={`p-2 rounded-full transition ${darkMode ? 'hover:bg-neutral-800 text-neutral-300' : 'hover:bg-neutral-100 text-neutral-700'}`}>
+                    <Video className="w-4 h-4" />
                   </button>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 space-y-2">
+                {messages.map((msg) => {
+                  const isMine = msg.senderId === currentUserId;
+                  return (
+                    <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[75%] sm:max-w-[60%] px-3.5 py-2 rounded-2xl text-xs sm:text-sm ${
+                        isMine
+                          ? `bg-orange-600 text-white rounded-br-sm ${msg.pending ? 'opacity-60' : ''}`
+                          : `${darkMode ? 'bg-neutral-800 text-white' : 'bg-white text-neutral-900 border border-neutral-200'} rounded-bl-sm`
+                      }`}>
+                        {renderMessageContent(msg.content)}
+                        <div className={`flex items-center gap-1 mt-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                          <span className={`text-[9px] ${isMine ? 'text-orange-100' : 'text-neutral-500'}`}>
+                            {new Date(msg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {isMine && !msg.pending && (
+                            msg.isRead ? <CheckCheck className="w-3 h-3 text-blue-300" /> : <Check className="w-3 h-3 text-orange-100" />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Barre de saisie — flex-shrink-0 sur CHAQUE bouton pour empêcher la disparition du bouton envoyer en mobile */}
+              <div className={`flex-shrink-0 border-t px-2 sm:px-3 py-2.5 ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+                {isRecording ? (
+                  <div className="flex items-center gap-3 px-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+                    <span className="text-xs font-bold flex-1">Enregistrement... {formatTime(recordingTime)}</span>
+                    <button onClick={stopRecording} className="p-2.5 rounded-full bg-red-600 text-white flex-shrink-0">
+                      <Square className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSendMessage} className="flex items-center gap-1 sm:gap-1.5">
+                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*,video/*,.pdf,.docx" />
+                    <button type="button" onClick={() => fileInputRef.current?.click()} className={`p-2 rounded-full transition flex-shrink-0 ${darkMode ? 'hover:bg-neutral-800 text-neutral-400' : 'hover:bg-neutral-100 text-neutral-600'}`}>
+                      <Paperclip className="w-4 h-4" />
+                    </button>
+
+                    <div className="relative flex-shrink-0">
+                      <button type="button" onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`p-2 rounded-full transition ${darkMode ? 'hover:bg-neutral-800 text-neutral-400' : 'hover:bg-neutral-100 text-neutral-600'}`}>
+                        <Smile className="w-4 h-4" />
+                      </button>
+                      <AnimatePresence>
+                        {showEmojiPicker && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className={`absolute bottom-12 left-0 grid grid-cols-4 gap-1 p-2 rounded-xl border shadow-xl z-20 ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}
+                          >
+                            {COMMON_EMOJIS.map((emoji) => (
+                              <button key={emoji} type="button" onClick={() => { setNewMessage(prev => prev + emoji); setShowEmojiPicker(false); }} className="text-lg p-1 hover:bg-neutral-800/30 rounded">
+                                {emoji}
+                              </button>
+                            ))}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    <input
+                      value={newMessage}
+                      onChange={(e) => handleTyping(e.target.value)}
+                      placeholder="Message..."
+                      className={`flex-1 min-w-0 bg-transparent border rounded-full px-3.5 py-2 text-xs sm:text-sm outline-none focus:border-orange-500 transition ${darkMode ? 'border-neutral-800 bg-neutral-950' : 'border-neutral-300 bg-neutral-50'}`}
+                    />
+
+                    {newMessage.trim() ? (
+                      <button type="submit" className="p-2.5 rounded-full bg-orange-600 hover:bg-orange-700 text-white transition flex-shrink-0">
+                        <Send className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <button type="button" onClick={startRecording} className="p-2.5 rounded-full bg-orange-600 hover:bg-orange-700 text-white transition flex-shrink-0">
+                        <Mic className="w-4 h-4" />
+                      </button>
+                    )}
+                  </form>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* MODALE APPEL ENTRANT */}
+      <AnimatePresence>
+        {incomingCallData && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className={`w-full max-w-xs p-6 rounded-2xl text-center ${darkMode ? 'bg-neutral-900' : 'bg-white'}`}>
+              <div className="w-20 h-20 rounded-full bg-orange-600 text-white font-bold text-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
+                {getInitials(selectedContact?.name)}
+              </div>
+              <p className="font-extrabold text-sm mb-1">Appel {incomingCallData.isVideo ? 'vidéo' : 'audio'} entrant</p>
+              <p className="text-xs text-neutral-500 mb-6">{selectedContact?.name || 'Contact'}</p>
+              <div className="flex items-center justify-center gap-6">
+                <button onClick={rejectIncomingCall} className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center">
+                  <PhoneOff className="w-5 h-5" />
+                </button>
+                <button onClick={acceptIncomingCall} className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center">
+                  <Phone className="w-5 h-5" />
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
-      </main>
+      </AnimatePresence>
 
-      {/* Barre de navigation mobile inférieure (Fixe et immobile) */}
-      <nav className={`md:hidden fixed bottom-0 left-0 right-0 z-40 border-t flex items-center justify-around py-3 backdrop-blur-lg ${
-        isLightMode ? 'bg-white/90 border-slate-200 text-slate-700' : 'bg-zinc-900/90 border-zinc-800 text-zinc-300'
-      }`}>
-        <button
-          onClick={() => setActiveBottomTab('chats')}
-          className={`flex flex-col items-center gap-1 ${activeBottomTab === 'chats' ? 'text-orange-500 font-bold' : 'text-zinc-400'}`}
-        >
-          <MessageCircle className="w-5 h-5" />
-          <span className="text-[10px]">Discussions</span>
-        </button>
-        <button
-          onClick={() => setActiveBottomTab('people')}
-          className={`flex flex-col items-center gap-1 ${activeBottomTab === 'people' ? 'text-orange-500 font-bold' : 'text-zinc-400'}`}
-        >
-          <Users className="w-5 h-5" />
-          <span className="text-[10px]">Membres</span>
-        </button>
-      </nav>
+      {/* MODALE APPEL EN COURS */}
+      <AnimatePresence>
+        {(inCall || isCallingOut) && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-4">
+            {callType === 'video' && (
+              <video ref={remoteVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
+            )}
+            {callType === 'video' && (
+              <video ref={localVideoRef} autoPlay playsInline muted className="absolute bottom-24 right-4 w-24 h-32 rounded-xl object-cover border-2 border-white/30" />
+            )}
 
+            <div className="relative z-10 text-center text-white">
+              {callType === 'audio' && (
+                <div className="w-24 h-24 rounded-full bg-orange-600 text-white font-bold text-3xl flex items-center justify-center mx-auto mb-4">
+                  {getInitials(selectedContact?.name)}
+                </div>
+              )}
+              <p className="font-extrabold text-lg mb-1">{selectedContact?.name}</p>
+              <p className="text-xs text-neutral-300">{isCallingOut ? 'Appel en cours...' : formatTime(callDuration)}</p>
+            </div>
+
+            <button onClick={endCall} className="relative z-10 mt-10 w-14 h-14 rounded-full bg-red-600 text-white flex items-center justify-center">
+              <PhoneOff className="w-6 h-6" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
