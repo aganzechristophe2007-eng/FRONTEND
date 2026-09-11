@@ -9,17 +9,25 @@ import {
   User as UserIcon, 
   ShoppingBag, 
   Wallet, 
-  FileText 
+  FileText,
+  Search,
+  Filter,
+  ArrowRight,
+  ShieldCheck,
+  Star,
+  ChevronRight,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 
-// Exemple de fonction utilitaire pour résoudre les URLs d'images (à adapter selon ton projet)
+// Fonction utilitaire pour résoudre les URLs d'images (produits ou avatars)
 const getImageUrl = (img?: string) => {
   if (!img) return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=500&q=80';
   if (img.startsWith('http')) return img;
   return `${import.meta.env.VITE_API_URL || ''}/${img}`;
 };
 
-interface HomeCatalogProps {
+interface HomeProps {
   darkMode?: boolean;
   user?: {
     id?: string;
@@ -35,7 +43,7 @@ interface HomeCatalogProps {
   handleProtectedAction: (path: string) => void;
 }
 
-export default function HomeCatalog({
+export default function Home({
   darkMode = true,
   user,
   unreadMessagesCount = 0,
@@ -43,17 +51,95 @@ export default function HomeCatalog({
   loadingProducts = false,
   LOGO_URL = '',
   handleProtectedAction
-}: HomeCatalogProps) {
+}: HomeProps) {
   const navigate = useNavigate();
   const location = useLocation();
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/products?search=${encodeURIComponent(searchQuery.trim())}`);
+    } else {
+      navigate('/products');
+    }
+  };
 
   return (
     <div className={`min-h-screen flex flex-col justify-between ${darkMode ? 'bg-neutral-950 text-white' : 'bg-neutral-50 text-neutral-900'}`}>
       
-      {/* SECTION CONTENU PRINCIPAL & CATALOGUE */}
-      <div className="flex-grow">
-        <section className="max-w-7xl mx-auto px-2 sm:px-4 py-6">
-          <div className="flex justify-between items-center mb-5 border-b border-neutral-800 pb-3">
+      {/* CONTENU GLOBAL DE LA PAGE ACCUEIL / CATALOGUE */}
+      <div className="flex-grow pb-16 sm:pb-0">
+        
+        {/* HERO SECTION / BANNIERE DE RECHERCHE RAPIDE */}
+        <section className="relative overflow-hidden py-12 sm:py-20 px-4 border-b border-neutral-800/60 bg-gradient-to-b from-neutral-900/50 to-neutral-950">
+          <div className="max-w-4xl mx-auto text-center relative z-10">
+            <motion.div 
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              <span className="bg-orange-500/10 text-orange-400 border border-orange-500/20 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider inline-block mb-4">
+                La référence e-commerce à Bukavu 🇨🇩
+              </span>
+              <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight mb-4">
+                Achetez et Vendez en toute <span className="text-orange-500">Confiance</span>
+              </h1>
+              <p className="text-neutral-400 text-sm sm:text-base max-w-2xl mx-auto mb-8">
+                Trouvez les meilleures offres locales, gagnez du temps et concluez vos transactions en toute sécurité sur CBF SOKO.
+              </p>
+            </motion.div>
+
+            {/* Barre de recherche principale */}
+            <motion.form 
+              onSubmit={handleSearchSubmit}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+              className="flex items-center bg-neutral-900 border border-neutral-800 rounded-2xl p-1.5 sm:p-2 shadow-xl max-w-2xl mx-auto focus-within:border-orange-500 transition"
+            >
+              <div className="pl-3 text-neutral-400">
+                <Search className="w-5 h-5" />
+              </div>
+              <input 
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Que recherchez-vous aujourd'hui ? (ex: iPhone, Chaussures...)"
+                className="w-full bg-transparent border-none outline-none px-3 text-sm sm:text-base text-white placeholder-neutral-500"
+              />
+              <button 
+                type="submit"
+                className="bg-orange-600 hover:bg-orange-500 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition cursor-pointer flex items-center gap-1.5 shrink-0"
+              >
+                <span>Rechercher</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </motion.form>
+
+            {/* Avantages rapides */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 mt-8 max-w-xl mx-auto text-xs text-neutral-400 font-medium">
+              <div className="flex items-center justify-center gap-1.5 bg-neutral-900/60 border border-neutral-800/80 py-2 px-3 rounded-xl">
+                <ShieldCheck className="w-4 h-4 text-orange-500 shrink-0" />
+                <span>Paiement Sécurisé</span>
+              </div>
+              <div className="flex items-center justify-center gap-1.5 bg-neutral-900/60 border border-neutral-800/80 py-2 px-3 rounded-xl">
+                <MapPin className="w-4 h-4 text-orange-500 shrink-0" />
+                <span>Bukavu & RDC</span>
+              </div>
+              <div className="flex items-center justify-center gap-1.5 bg-neutral-900/60 border border-neutral-800/80 py-2 px-3 rounded-xl">
+                <Star className="w-4 h-4 text-orange-500 shrink-0" />
+                <span>Vendeurs Vérifiés</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* CATALOGUE / PRODUITS (4 produits par ligne en mobile, aspect parfaitement carré, texte réduit en bas) */}
+        <section className="max-w-7xl mx-auto px-2 sm:px-4 py-8">
+          <div className="flex justify-between items-center mb-6 border-b border-neutral-800 pb-3">
             <div className="flex items-center gap-2">
               <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-orange-500" />
               <h2 className="text-base sm:text-2xl font-extrabold tracking-tight">BYA BIKO DISPO</h2>
@@ -64,12 +150,13 @@ export default function HomeCatalog({
           </div>
 
           {loadingProducts ? (
-            <div className="text-center py-16 text-neutral-500 text-xs flex flex-col items-center justify-center gap-3">
+            <div className="text-center py-20 text-neutral-500 text-xs flex flex-col items-center justify-center gap-3">
               <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
               Chargement des meilleures offres...
             </div>
           ) : featuredProducts.length === 0 ? (
-            <div className="text-center py-16 text-neutral-500 text-xs bg-neutral-900/30 rounded-2xl border border-neutral-800">
+            <div className="text-center py-20 text-neutral-500 text-xs bg-neutral-900/30 rounded-2xl border border-neutral-800 flex flex-col items-center justify-center gap-2">
+              <AlertCircle className="w-8 h-8 text-neutral-600 mb-1" />
               Aucun produit disponible pour le moment. Soyez le premier à en poster un !
             </div>
           ) : (
@@ -105,7 +192,7 @@ export default function HomeCatalog({
                     }`}
                   >
                     <div>
-                      {/* Image carrée cliquable redirigeant vers la page de détails */}
+                      {/* Image carrée (aspect-square) cliquable redirigeant vers la page de détails */}
                       <div className="aspect-square w-full overflow-hidden bg-neutral-950 relative">
                         <img 
                           src={prodImage} 
@@ -127,7 +214,7 @@ export default function HomeCatalog({
                         )}
                       </div>
 
-                      {/* Bloc texte */}
+                      {/* Bloc texte extrêmement compact et police réduite pour mobile (4 par ligne) */}
                       <div className="p-1.5 sm:p-4">
                         <div className="flex justify-between items-center text-[8px] sm:text-[11px] text-neutral-400 mb-0.5">
                           <span className="truncate max-w-[50px] sm:max-w-[120px]" title={posterName}><strong>{posterName}</strong></span>
@@ -168,8 +255,8 @@ export default function HomeCatalog({
         </section>
       </div>
 
-      {/* BARRE DE NAVIGATION MOBILE (Optionnelle si intégrée dans ton layout global, présente ici pour cohérence) */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-neutral-900 border-t border-neutral-800 flex items-center justify-around py-2">
+      {/* BARRE DE NAVIGATION MOBILE (Fixe en bas sur petits écrans) */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-neutral-900 border-t border-neutral-800 flex items-center justify-around py-2 shadow-2xl">
         <button 
           onClick={() => handleProtectedAction('/messages')}
           className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/messages') ? 'text-orange-500 font-bold' : 'hover:text-orange-500'}`}
@@ -206,7 +293,7 @@ export default function HomeCatalog({
       </div>
 
       {/* FOOTER IMMOBILISÉ EN BAS AVEC MENTIONS JURIDIQUES ET CONDITIONS */}
-      <footer className={`border-t py-8 px-4 sm:px-8 mt-auto sticky bottom-0 transition-colors ${
+      <footer className={`border-t py-8 px-4 sm:px-8 mt-auto sticky bottom-0 z-40 transition-colors ${
         darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-400' : 'bg-white border-neutral-200 text-neutral-600'
       }`}>
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
