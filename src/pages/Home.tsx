@@ -737,17 +737,32 @@ export default function Home() {
         </button>
       </div>
 
+      {/* HERO MARKETPLACE */}
+      <section className={`relative overflow-hidden border-b ${darkMode ? 'border-neutral-800 bg-neutral-950' : 'border-neutral-200 bg-white'}`}>
+        <div className="absolute -top-32 -right-20 w-80 h-80 rounded-full bg-orange-600/10 blur-3xl pointer-events-none" />
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-8 py-10 sm:py-16 lg:py-20">
+          <div className="grid lg:grid-cols-[1.15fr_.85fr] gap-10 items-center">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-orange-500/20 bg-orange-500/10 text-orange-500 text-[10px] sm:text-xs font-bold uppercase tracking-wider mb-5"><MapPin className="w-3.5 h-3.5" /> Bukavu · Sud-Kivu</div>
+              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.05] max-w-3xl">Achetez, vendez et découvrez <span className="text-orange-500">au même endroit.</span></h1>
+              <p className={`mt-5 max-w-2xl text-sm sm:text-base leading-7 ${darkMode ? 'text-neutral-400' : 'text-neutral-600'}`}>CBF SOKO connecte les acheteurs, vendeurs et boutiques de Bukavu sur une marketplace simple, rapide et pensée pour le commerce local.</p>
+              <form onSubmit={handleSearch} className="mt-7 max-w-2xl"><div className={`flex items-center rounded-2xl border p-1.5 shadow-xl ${darkMode ? 'bg-neutral-900 border-neutral-700' : 'bg-white border-neutral-200'}`}><Search className="w-5 h-5 ml-3 text-neutral-500 flex-shrink-0" /><input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Que recherchez-vous ?" className="flex-1 min-w-0 bg-transparent px-3 py-3 text-sm outline-none placeholder-neutral-500" /><button type="submit" className="px-5 sm:px-7 py-3 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold transition">Rechercher</button></div></form>
+              <div className="mt-5 flex flex-wrap gap-2 text-[11px] sm:text-xs"><span className="text-neutral-500 py-1">Recherches populaires :</span>{['Téléphones','Électronique','Mode','Maison'].map(term => <button key={term} onClick={() => navigate(`/products?search=${encodeURIComponent(term)}`)} className={`px-3 py-1.5 rounded-full border transition ${darkMode ? 'border-neutral-800 bg-neutral-900 hover:border-orange-500' : 'border-neutral-200 bg-neutral-50 hover:border-orange-500'}`}>{term}</button>)}</div>
+            </div>
+            <div className="hidden sm:grid grid-cols-2 gap-3 max-w-md lg:ml-auto">
+              {[{icon:ShieldCheck,title:'Commerce de confiance',text:'Vendeurs et boutiques contrôlés'},{icon:Truck,title:'Livraison locale',text:'Option de livraison à la commande'},{icon:CreditCard,title:'USD & CDF',text:'Prix affichés dans les deux devises'},{icon:MessageSquare,title:'Contact direct',text:'Échangez avec le vendeur avant achat'}].map(({icon:Icon,title,text}) => <div key={title} className={`rounded-2xl border p-5 ${darkMode ? 'bg-neutral-900/80 border-neutral-800' : 'bg-neutral-50 border-neutral-200'}`}><div className="w-10 h-10 rounded-xl bg-orange-500/10 text-orange-500 flex items-center justify-center mb-4"><Icon className="w-5 h-5" /></div><h3 className="text-sm font-extrabold">{title}</h3><p className="text-[11px] text-neutral-500 mt-1 leading-5">{text}</p></div>)}
+            </div>
+          </div>
+        </div>
+      </section>
+      <section className={`border-b ${darkMode ? 'border-neutral-800 bg-neutral-900/50' : 'border-neutral-200 bg-neutral-50'}`}><div className="max-w-7xl mx-auto px-4 sm:px-8 py-4 grid grid-cols-2 md:grid-cols-4 gap-4">{[['Marketplace locale','Acheteurs et vendeurs de Bukavu'],['Neuf & occasion','Des offres pour différents budgets'],['Messagerie intégrée','Discutez avant de conclure'],['Livraison','Selon les conditions de la commande']].map(([title,text]) => <div key={title} className="flex items-start gap-2.5"><div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0"><ShieldCheck className="w-3.5 h-3.5" /></div><div><p className="text-[10px] sm:text-xs font-bold">{title}</p><p className="text-[9px] sm:text-[10px] text-neutral-500 mt-0.5 leading-4">{text}</p></div></div>)}</div></section>
+
       {/* CONTENU PRINCIPAL — flex-1 pour occuper l'espace restant et repousser le footer en bas */}
       <main className="flex-1 pb-20 sm:pb-0">
         <section className="max-w-7xl mx-auto px-2 sm:px-4 py-6">
-          <div className="flex justify-between items-center mb-5 border-b border-neutral-800 pb-3">
-            <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-orange-500" />
-              <h2 className="text-base sm:text-2xl font-extrabold tracking-tight">BYA BIKO DISPO</h2>
-            </div>
-            <Link to="/products" className="text-orange-500 hover:text-orange-400 font-semibold text-[11px] sm:text-xs uppercase tracking-wider transition flex items-center gap-1">
-              Catalogue complet &rarr;
-            </Link>
+          <div className="flex justify-between items-end mb-5 sm:mb-6">
+            <div><div className="flex items-center gap-2 mb-1.5"><Zap className="w-4 h-4 sm:w-5 sm:h-5 text-orange-500" /><span className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-orange-500">Sélection CBF SOKO</span></div><h2 className="text-xl sm:text-2xl font-black tracking-tight">Dernières offres</h2><p className="text-[11px] sm:text-xs text-neutral-500 mt-1">Découvrez les annonces récemment publiées.</p></div>
+            <Link to="/products" className="text-orange-500 hover:text-orange-400 font-bold text-[10px] sm:text-xs uppercase tracking-wider transition">Tout voir →</Link>
           </div>
 
           {loadingProducts ? (
@@ -860,93 +875,13 @@ export default function Home() {
         </section>
       </main>
 
-      {/* FOOTER — flux normal, tout en bas de page (pas fixed), façon Facebook avec liens légaux */}
-      <footer className={`mt-auto border-t transition-colors ${
-        darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-400' : 'bg-white border-neutral-200 text-neutral-600'
-      }`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 py-10">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            
-            {/* Colonne marque */}
-            <div className="col-span-2 md:col-span-1">
-              <div className="flex items-center gap-2.5 mb-3">
-                <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center overflow-hidden shadow-md border border-orange-500 relative flex-shrink-0">
-                  <img 
-                    src={LOGO_URL} 
-                    alt="CBF SOKO Logo" 
-                    className="w-full h-full object-cover" 
-                    onError={(e) => {
-                      (e.currentTarget as HTMLElement).style.display = 'none';
-                    }} 
-                  />
-                </div>
-                <span className={`font-extrabold text-sm block ${darkMode ? 'text-white' : 'text-neutral-900'}`}>CBF SOKO</span>
-              </div>
-              <p className="text-[12px] leading-relaxed mb-4">
-                La plateforme de confiance pour vos achats et ventes en RDC. Bukavu, Sud-Kivu.
-              </p>
-              <div className="flex items-center gap-2">
-  <a href="#" aria-label="Facebook" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-600 hover:text-white flex items-center justify-center transition"><FacebookIcon className="w-3.5 h-3.5" /></a>
-  <a href="#" aria-label="Instagram" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-600 hover:text-white flex items-center justify-center transition"><InstagramIcon className="w-3.5 h-3.5" /></a>
-  <a href="#" aria-label="Twitter / X" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-600 hover:text-white flex items-center justify-center transition"><TwitterIcon className="w-3.5 h-3.5" /></a>
-  <a href="#" aria-label="Youtube" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-600 hover:text-white flex items-center justify-center transition"><YoutubeIcon className="w-3.5 h-3.5" /></a>
-</div>
-            </div>
-
-            {/* Découvrir */}
-            <div>
-              <h4 className={`text-xs font-extrabold uppercase tracking-wider mb-3 ${darkMode ? 'text-white' : 'text-neutral-900'}`}>Découvrir</h4>
-              <ul className="flex flex-col gap-2 text-[12px]">
-                <li><Link to="/products" className="hover:text-orange-500 transition">Catalogue</Link></li>
-                <li><Link to="/create-product" className="hover:text-orange-500 transition">Vendre un article</Link></li>
-                <li><Link to="/wallet" className="hover:text-orange-500 transition">Portefeuille</Link></li>
-                <li><Link to="/orders" className="hover:text-orange-500 transition">Mes commandes</Link></li>
-              </ul>
-            </div>
-
-            {/* Assistance */}
-            <div>
-              <h4 className={`text-xs font-extrabold uppercase tracking-wider mb-3 ${darkMode ? 'text-white' : 'text-neutral-900'}`}>Assistance</h4>
-              <ul className="flex flex-col gap-2 text-[12px]">
-                <li><Link to="/messages" className="hover:text-orange-500 transition">Centre d'aide</Link></li>
-                <li><Link to="/messages" className="hover:text-orange-500 transition">Nous contacter</Link></li>
-                <li>
-                  <a href="mailto:support@cbfsoko.com" className="hover:text-orange-500 transition flex items-center gap-1.5">
-                    <Mail className="w-3 h-3" /> support@cbfsoko.com
-                  </a>
-                </li>
-                <li>
-                  <a href="tel:+243000000000" className="hover:text-orange-500 transition flex items-center gap-1.5">
-                    <Phone className="w-3 h-3" /> +243 000 000 000
-                  </a>
-                </li>
-              </ul>
-            </div>
-
-            {/* Légal */}
-            <div>
-              <h4 className={`text-xs font-extrabold uppercase tracking-wider mb-3 ${darkMode ? 'text-white' : 'text-neutral-900'}`}>Légal</h4>
-              <ul className="flex flex-col gap-2 text-[12px]">
-                <li><Link to="/legal/terms" className="hover:text-orange-500 transition flex items-center gap-1.5"><FileText className="w-3 h-3" /> Conditions d'utilisation</Link></li>
-                <li><Link to="/legal/privacy" className="hover:text-orange-500 transition flex items-center gap-1.5"><ShieldCheck className="w-3 h-3" /> Politique de confidentialité</Link></li>
-                <li><Link to="/legal/cookies" className="hover:text-orange-500 transition flex items-center gap-1.5"><Cookie className="w-3 h-3" /> Politique de cookies</Link></li>
-                <li><Link to="/legal/mentions" className="hover:text-orange-500 transition flex items-center gap-1.5"><Scale className="w-3 h-3" /> Mentions légales</Link></li>
-                <li><Link to="/legal/community" className="hover:text-orange-500 transition flex items-center gap-1.5"><Info className="w-3 h-3" /> Règles de la communauté</Link></li>
-              </ul>
-            </div>
-          </div>
-
-          {/* Barre du bas */}
-          <div className={`mt-10 pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] ${darkMode ? 'border-neutral-800' : 'border-neutral-200'}`}>
-            <span>&copy; {new Date().getFullYear()} CBF SOKO. Tous droits réservés.</span>
-            <div className="flex items-center gap-4">
-              <span>Français (RDC)</span>
-              <span className="flex items-center gap-1"><MapPin className="w-3 h-3 text-orange-500" /> Bukavu, RDC</span>
-            </div>
-          </div>
-        </div>
+      {/* FOOTER — compact et professionnel */}
+      <footer className={`border-t ${darkMode ? 'bg-neutral-950 border-neutral-800 text-neutral-500' : 'bg-white border-neutral-200 text-neutral-500'}`}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 py-6"><div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-[10px] sm:text-[11px]">
+          <div className="flex items-center gap-2"><div className="w-7 h-7 rounded-lg bg-orange-600 overflow-hidden flex items-center justify-center"><img src={LOGO_URL} alt="CBF SOKO" className="w-full h-full object-cover" /></div><span>© {new Date().getFullYear()} CBF SOKO · Bukavu, RDC</span></div>
+          <div className="flex flex-wrap justify-center items-center gap-x-4 gap-y-2"><Link to="/products" className="hover:text-orange-500 transition">Catalogue</Link><Link to="/legal/terms" className="hover:text-orange-500 transition">Conditions</Link><Link to="/legal/privacy" className="hover:text-orange-500 transition">Confidentialité</Link><Link to="/legal/mentions" className="hover:text-orange-500 transition">Mentions légales</Link></div>
+        </div></div>
       </footer>
-
     </div>
   );
 }
