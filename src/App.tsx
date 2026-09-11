@@ -15,6 +15,7 @@ import UpdateProfile from './pages/UpdateProfile';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminSellerDashboard from './pages/AdminSellerDashboard';
 import AdminFinancesDashboard from './pages/AdminFinancesDashboard';
+import LegalPage from './pages/LegalPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
 export default function App() {
@@ -36,6 +37,9 @@ export default function App() {
         <Route path="/messages" element={<MessagingPage />} />
         <Route path="/notifications" element={<Notifications isLightMode={false} />} />
         <Route path="/wallet" element={<FullUserWallet />} />
+
+        {/* Pages légales (CGU, Confidentialité, Cookies, Mentions légales, Règles communauté) */}
+        <Route path="/legal/:slug" element={<LegalPage />} />
 
         {/* Routes Administration & Finances protégées */}
         <Route 
