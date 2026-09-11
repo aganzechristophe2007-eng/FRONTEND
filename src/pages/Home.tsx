@@ -601,7 +601,7 @@ export default function Home() {
             </button>
 
             <button 
-              onClick={() => handleProtectedAction('/create-product')}
+              onClick={() => handleProtectedAction('/ProductDetails')}
               className="hidden sm:flex items-center gap-1 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs px-3 py-2 rounded-xl transition shadow-md shadow-orange-600/20 cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
