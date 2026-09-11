@@ -1053,6 +1053,7 @@ export default function Home() {
                 <li><button type="button" onClick={() => setLegalPanel('privacy')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><ShieldCheck className="w-3 h-3" /> Politique de confidentialité</button></li>
                 <li><button type="button" onClick={() => setLegalPanel('cookies')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><Cookie className="w-3 h-3" /> Politique de cookies</button></li>
                 <li><button type="button" onClick={() => setLegalPanel('mentions')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><Scale className="w-3 h-3" /> Mentions légales</button></li>
+                
               </ul>
             </div>
           </div>
