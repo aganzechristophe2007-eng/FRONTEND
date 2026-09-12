@@ -5,7 +5,7 @@ import {
   Search, PlusCircle, Sun, Moon, Zap, Wallet, Palette, MoreHorizontal, Share2, Flag, Check, 
   MessageSquare, Bell, LogOut, Package, ShieldCheck, Truck, 
   Headphones, MapPin, Home as HomeIcon, Image as ImageIcon, Sparkles, X, ChevronDown, Award, CreditCard, Camera, User as UserIcon, HelpCircle, History, Info, Target, Store,
-  FileText, Cookie, Scale, Mail, Phone
+  FileText, Cookie, Scale, Mail, Phone, ShoppingCart, UserPlus, UserCheck, Volume2, VolumeX, Send, Users, Video
 } from 'lucide-react';
 import { apiFetch } from '../api/client';
 
@@ -17,6 +17,12 @@ interface User {
   role?: string;
   avatar?: string;
   profileImage?: string;
+}
+
+interface SellerLite {
+  id: string;
+  name: string;
+  avatar?: string;
 }
 
 interface ProductItem {
@@ -35,7 +41,20 @@ interface ProductItem {
   quantity?: number | string;
   type?: string;
   isDemande?: boolean;
+  videoUrl?: string;
+  createdAt?: string;
 }
+
+interface ReelItem {
+  id: string;
+  videoUrl: string;
+  thumbnail?: string;
+  caption?: string;
+  productId?: string;
+  product?: ProductItem;
+  seller?: SellerLite;
+}
+
 // Icônes réseaux sociaux en SVG inline (évite toute dépendance à lucide-react pour les logos de marque)
 const FacebookIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
@@ -115,6 +134,26 @@ export default function Home() {
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
   const [unreadNotifsCount, setUnreadNotifsCount] = useState<number>(0);
   const navigate = useNavigate();
+
+  // --- NOUVEAU : état "réseau social & commerce" ---
+  const [cartCount, setCartCount] = useState<number>(0);
+
+  const [reels, setReels] = useState<ReelItem[]>([]);
+  const [loadingReels, setLoadingReels] = useState<boolean>(true);
+  const [reelsApiAvailable, setReelsApiAvailable] = useState<boolean>(true);
+  const [reelMutedMap, setReelMutedMap] = useState<Record<string, boolean>>({});
+  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const [followLoadingId, setFollowLoadingId] = useState<string | null>(null);
+
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  const [feedbackText, setFeedbackText] = useState<string>('');
+  const [feedbackSent, setFeedbackSent] = useState<boolean>(false);
+  const [feedbackError, setFeedbackError] = useState<boolean>(false);
+  const [sendingFeedback, setSendingFeedback] = useState<boolean>(false);
+  // --- FIN NOUVEAU ---
 
   const LOGO_URL = '/logo.png'; 
 
@@ -342,6 +381,140 @@ export default function Home() {
     fetchUserOrdersCount();
   }, [token, user]);
 
+  // --- NOUVEAU : panier ---
+  useEffect(() => {
+    const currentToken = localStorage.getItem('token');
+    if (!currentToken) { setCartCount(0); return; }
+    apiFetch('/cart')
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.items || data.data || []);
+        setCartCount(Array.isArray(list) ? list.length : 0);
+      })
+      .catch(() => {});
+  }, [token]);
+
+  // --- NOUVEAU : reels / vidéos produits (30s max), avec repli sur les produits ayant une vidéo ---
+  useEffect(() => {
+    apiFetch('/reels')
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.data || []);
+        setReels(list.slice(0, 12));
+      })
+      .catch(() => setReelsApiAvailable(false))
+      .finally(() => setLoadingReels(false));
+  }, []);
+
+  const displayedReels = useMemo<ReelItem[]>(() => {
+    if (reelsApiAvailable && reels.length > 0) return reels;
+    return featuredProducts
+      .filter(p => !!p.videoUrl)
+      .slice(0, 12)
+      .map(p => ({
+        id: String(p.id || p._id),
+        videoUrl: p.videoUrl as string,
+        thumbnail: getImageUrl(p.images?.[0]),
+        caption: p.title,
+        productId: p.id || p._id,
+        product: p,
+        seller: p.seller ? { id: p.seller.id || p.seller._id || '', name: p.seller.name } : undefined,
+      }));
+  }, [reels, reelsApiAvailable, featuredProducts, getImageUrl]);
+
+  const isReelMuted = useCallback((id: string) => reelMutedMap[id] ?? true, [reelMutedMap]);
+  const toggleReelMute = useCallback((id: string) => {
+    setReelMutedMap(prev => ({ ...prev, [id]: !(prev[id] ?? true) }));
+  }, []);
+
+  // --- NOUVEAU : Follow / Unfollow vendeurs ---
+  useEffect(() => {
+    if (!token) { setFollowingIds(new Set()); return; }
+    apiFetch('/follows/me')
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.data || []);
+        const ids = list.map((f: any) => f.sellerId || f.userId || f.id || f._id).filter(Boolean);
+        setFollowingIds(new Set(ids));
+      })
+      .catch(() => {});
+  }, [token]);
+
+  const toggleFollow = useCallback(async (sellerId?: string) => {
+    if (!sellerId) return;
+    if (!token) { navigate('/login?redirect=/'); return; }
+    const isFollowing = followingIds.has(sellerId);
+    setFollowLoadingId(sellerId);
+    setFollowingIds(prev => {
+      const next = new Set(prev);
+      if (isFollowing) next.delete(sellerId); else next.add(sellerId);
+      return next;
+    });
+    try {
+      await apiFetch(`/sellers/${sellerId}/follow`, { method: isFollowing ? 'DELETE' : 'POST' });
+    } catch (err) {
+      // Rollback en cas d'échec réseau/API
+      setFollowingIds(prev => {
+        const next = new Set(prev);
+        if (isFollowing) next.add(sellerId); else next.delete(sellerId);
+        return next;
+      });
+      console.error("Erreur follow/unfollow", err);
+    } finally {
+      setFollowLoadingId(null);
+    }
+  }, [followingIds, token, navigate]);
+
+  const followedFeed = useMemo(() => {
+    if (followingIds.size === 0) return [];
+    return featuredProducts
+      .filter(p => {
+        const sellerId = p.sellerId || p.userId || p.seller?.id || p.seller?._id;
+        return sellerId ? followingIds.has(sellerId) : false;
+      })
+      .sort((a, b) => {
+        const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return db - da;
+      });
+  }, [featuredProducts, followingIds]);
+
+  const suggestedSellers = useMemo<SellerLite[]>(() => {
+    const map = new Map<string, SellerLite>();
+    featuredProducts.forEach(p => {
+      const id = p.sellerId || p.userId || p.seller?.id || p.seller?._id;
+      if (id && !map.has(id) && !followingIds.has(id)) {
+        map.set(id, { id, name: p.seller?.name || 'Vendeur' });
+      }
+    });
+    return Array.from(map.values()).slice(0, 10);
+  }, [featuredProducts, followingIds]);
+
+  // --- NOUVEAU : catégories dynamiques calculées depuis /products ---
+  const dynamicCategories = useMemo(() => {
+    const map = new Map<string, number>();
+    featuredProducts.forEach(p => {
+      const name = typeof p.category === 'object' && p.category !== null ? p.category.name : (typeof p.category === 'string' ? p.category : null);
+      if (name) map.set(name, (map.get(name) || 0) + 1);
+    });
+    return Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 12);
+  }, [featuredProducts]);
+
+  const handleSendFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feedbackText.trim()) return;
+    setSendingFeedback(true);
+    setFeedbackError(false);
+    try {
+      await apiFetch('/feedback', { method: 'POST', body: JSON.stringify({ message: feedbackText }) });
+      setFeedbackSent(true);
+      setFeedbackText('');
+    } catch (err) {
+      console.error('Erreur envoi feedback', err);
+      setFeedbackError(true);
+    } finally {
+      setSendingFeedback(false);
+    }
+  };
+  // --- FIN NOUVEAU ---
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -408,9 +581,18 @@ export default function Home() {
   }, []);
 
   const displayedProducts = useMemo(() => {
-    if (postFilter === 'ALL') return featuredProducts;
-    return featuredProducts.filter(product => postFilter === 'REQUEST' ? isRequestPost(product) : !isRequestPost(product));
-  }, [featuredProducts, postFilter, isRequestPost]);
+    let list = featuredProducts;
+    if (postFilter !== 'ALL') {
+      list = list.filter(product => postFilter === 'REQUEST' ? isRequestPost(product) : !isRequestPost(product));
+    }
+    if (activeCategory) {
+      list = list.filter(product => {
+        const name = typeof product.category === 'object' && product.category !== null ? product.category.name : product.category;
+        return name === activeCategory;
+      });
+    }
+    return list;
+  }, [featuredProducts, postFilter, isRequestPost, activeCategory]);
 
   const shareProduct = async (product: ProductItem) => {
     const id = product.id || product._id;
@@ -460,11 +642,11 @@ export default function Home() {
       
       {/* Historique & Origine */}
       <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
-        <div className="w-14 h-14 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <div className="w-14 h-14 rounded-lg bg-orange-600/10 text-orange-600 flex items-center justify-center flex-shrink-0 mt-0.5">
           <History className="w-4 h-4" />
         </div>
         <div>
-          <h5 className="font-extrabold text-xs mb-1 text-orange-400">Histoire & Origine de CBF SOKO</h5>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-500">Histoire & Origine de CBF SOKO</h5>
           <p className="text-[11px] text-neutral-300 leading-relaxed">
             Fondée à Bukavu (République Démocratique du Congo) par des entrepreneurs locaux visionnaires passionnés de tech, CBF SOKO est née du besoin urgent de digitaliser le commerce de proximité et de fluidifier les transactions entre acheteurs et vendeurs au Kivu avec un outil ultra-rapide, fiable et sécurisé.
           </p>
@@ -473,11 +655,11 @@ export default function Home() {
 
       {/* Vision & Créateurs */}
       <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
-        <div className="w-14 h-14 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <div className="w-14 h-14 rounded-lg bg-orange-600/10 text-orange-600 flex items-center justify-center flex-shrink-0 mt-0.5">
           <Target className="w-4 h-4" />
         </div>
         <div>
-          <h5 className="font-extrabold text-xs mb-1 text-orange-400">Nos Créateurs & Mission</h5>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-500">Nos Créateurs & Mission</h5>
           <p className="text-[11px] text-neutral-300 leading-relaxed">
             Imaginée par une équipe d'ingénieurs et développeurs congolais, notre mission est de connecter directement les boutiques physiques, marchés locaux et particuliers de la région pour booster l'économie numérique locale, en éliminant les intermédiaires superflus.
           </p>
@@ -486,11 +668,11 @@ export default function Home() {
 
       {/* Services & Multidevises */}
       <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
-        <div className="w-14 h-14 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <div className="w-14 h-14 rounded-lg bg-orange-600/10 text-orange-600 flex items-center justify-center flex-shrink-0 mt-0.5">
           <Store className="w-4 h-4" />
         </div>
         <div>
-          <h5 className="font-extrabold text-xs mb-1 text-orange-400">Nos Services Principaux</h5>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-500">Nos Services Principaux</h5>
           <p className="text-[11px] text-neutral-300 leading-relaxed">
             Publication d'annonces instantanée par photo 📷, gestion de boutiques vérifiées, conversion automatique des prix en Dollars ($) et Francs Congolais (CDF), et messagerie interne en temps réel.
           </p>
@@ -499,11 +681,11 @@ export default function Home() {
 
       {/* Sécurité, Livraison & Garantie */}
       <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
-        <div className="w-14 h-14 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <div className="w-14 h-14 rounded-lg bg-orange-600/10 text-orange-600 flex items-center justify-center flex-shrink-0 mt-0.5">
           <ShieldCheck className="w-4 h-4" />
         </div>
         <div>
-          <h5 className="font-extrabold text-xs mb-1 text-orange-400">Garantie & Paiements Sécurisés</h5>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-500">Garantie & Paiements Sécurisés</h5>
           <p className="text-[11px] text-neutral-300 leading-relaxed">
             Chaque transaction est protégée par notre portefeuille électronique intégré. Les fonds restent sécurisés jusqu'à la livraison effective de votre colis par nos coursiers partenaires à Bukavu (Ibanda, Kadutu, Bagira).
           </p>
@@ -512,11 +694,11 @@ export default function Home() {
 
       {/* Support 7j/7 */}
       <div className="flex items-start gap-3">
-        <div className="w-14 h-14 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <div className="w-14 h-14 rounded-lg bg-orange-600/10 text-orange-600 flex items-center justify-center flex-shrink-0 mt-0.5">
           <Headphones className="w-4 h-4" />
         </div>
         <div>
-          <h5 className="font-extrabold text-xs mb-1 text-orange-400">Support Client 7j/7</h5>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-500">Support Client 7j/7</h5>
           <p className="text-[11px] text-neutral-300 leading-relaxed">
             Une assistance dédiée et réactive disponible à tout moment pour résoudre vos litiges, répondre à vos questions et vous accompagner dans vos achats et ventes quotidiens.
           </p>
@@ -540,7 +722,7 @@ export default function Home() {
           {/* Logo / Nom (Desktop) & Bouton '?' / Caméra (Mobile) */}
           <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0 relative" ref={servicesDropdownRef}>
             <Link to="/" className="hidden sm:flex items-center gap-2">
-              <div className="w-9 h-9 sm:w-11 sm:h-11 bg-orange-600 rounded-xl flex items-center justify-center overflow-hidden shadow-md shadow-orange-600/30 border border-orange-500 relative">
+              <div className="w-9 h-9 sm:w-11 sm:h-11 bg-orange-700 rounded-xl flex items-center justify-center overflow-hidden shadow-md shadow-orange-700/30 border border-orange-600 relative">
                 <img 
                   src={LOGO_URL} 
                   alt="CBF SOKO Logo" 
@@ -552,7 +734,7 @@ export default function Home() {
               </div>
               <div>
                 <span className="font-extrabold text-sm sm:text-base tracking-tight block leading-none">CBFSOKO</span>
-                <span className="text-[9px] text-orange-500 font-bold tracking-widest uppercase flex items-center gap-0.5">
+                <span className="text-[9px] text-orange-600 font-bold tracking-widest uppercase flex items-center gap-0.5">
                   <MapPin className="w-2.5 h-2.5" /> Bukavu
                 </span>
               </div>
@@ -564,16 +746,16 @@ export default function Home() {
                 setShowMobileServicesModal(true);
                 setShowServicesDropdown(prev => !prev);
               }}
-              className="w-8 h-8 rounded-full bg-orange-600/20 border border-orange-500 text-orange-500 flex items-center justify-center font-bold text-xs cursor-pointer hover:bg-orange-600 hover:text-white transition shadow-sm"
+              className="w-8 h-8 rounded-full bg-orange-700/20 border border-orange-600 text-orange-600 flex items-center justify-center font-bold text-xs cursor-pointer hover:bg-orange-700 hover:text-white transition shadow-sm"
               title="À propos, Historique, Nos Services & Garanties"
             >
               <HelpCircle className="w-4 h-4" />
             </button>
 
-            {/* SUR MOBILE : Icône Notification placée à gauche de la recherche */}
+            {/* SUR MOBILE : Icône Notification + Panier placées à gauche de la recherche */}
             <button 
               onClick={handleOpenNotifications}
-              className="sm:hidden p-2 rounded-xl bg-neutral-800 border border-neutral-700 text-orange-500 flex items-center justify-center cursor-pointer hover:bg-neutral-700 transition relative"
+              className="sm:hidden p-2 rounded-xl bg-neutral-800 border border-neutral-700 text-orange-600 flex items-center justify-center cursor-pointer hover:bg-neutral-700 transition relative"
               title="Notifications"
             >
               <Bell className="w-4 h-4" />
@@ -584,16 +766,30 @@ export default function Home() {
               )}
             </button>
 
+            {/* NOUVEAU : Panier (mobile) */}
+            <button 
+              onClick={() => handleProtectedAction('/cart')}
+              className="sm:hidden p-2 rounded-xl bg-neutral-800 border border-neutral-700 text-orange-600 flex items-center justify-center cursor-pointer hover:bg-neutral-700 transition relative"
+              title="Panier"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              {cartCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-orange-700 text-white text-[9px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full">
+                  {cartCount}
+                </span>
+              )}
+            </button>
+
             {/* Menu Déroulant DESKTOP pour les services et l'historique complet */}
             <div className="relative hidden md:block">
               <button 
                 onClick={() => setShowServicesDropdown(!showServicesDropdown)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition cursor-pointer ${
-                  darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-500 text-neutral-300' : 'bg-neutral-100 border-neutral-200 hover:border-orange-500 text-neutral-700'
+                  darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-600 text-neutral-300' : 'bg-neutral-100 border-neutral-200 hover:border-orange-600 text-neutral-700'
                 }`}
               >
                 <span>À propos de CBF SOKO</span>
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showServicesDropdown ? 'rotate-180 text-orange-500' : ''}`} />
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showServicesDropdown ? 'rotate-180 text-orange-600' : ''}`} />
               </button>
 
               {showServicesDropdown && (
@@ -602,10 +798,10 @@ export default function Home() {
                 }`}>
                   <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-700/50">
                     <div className="flex items-center gap-2">
-                      <div className="w-14 h-14 rounded-lg bg-orange-600 text-white flex items-center justify-center font-bold">
+                      <div className="w-14 h-14 rounded-lg bg-orange-700 text-white flex items-center justify-center font-bold">
                         <Sparkles className="w-3.5 h-3.5" />
                       </div>
-                      <h4 className="font-extrabold text-xs text-orange-500">Histoire, Créateurs & Services</h4>
+                      <h4 className="font-extrabold text-xs text-orange-600">Histoire, Créateurs & Services</h4>
                     </div>
                     <button onClick={() => setShowServicesDropdown(false)} className="text-neutral-400 hover:text-white cursor-pointer p-1">
                       <X className="w-4 h-4" />
@@ -635,7 +831,7 @@ export default function Home() {
                   className={`w-full max-w-sm p-5 rounded-2xl border relative shadow-2xl ${darkMode ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-200 text-neutral-900'}`}
                 >
                   <div className="flex justify-between items-center mb-4 pb-2 border-b border-neutral-800">
-                    <h3 className="font-extrabold text-xs text-orange-500 flex items-center gap-1.5">
+                    <h3 className="font-extrabold text-xs text-orange-600 flex items-center gap-1.5">
                       <Sparkles className="w-4 h-4" /> Histoire & Infos CBF SOKO
                     </h3>
                     <button 
@@ -654,7 +850,7 @@ export default function Home() {
           {/* Barre de recherche au milieu */}
           <form onSubmit={handleSearch} className="flex-1 max-w-lg min-w-0 mx-1 sm:mx-4">
             <div className={`flex w-full items-center rounded-full border overflow-hidden transition ${
-              darkMode ? 'bg-neutral-950 border-neutral-800 focus-within:border-orange-500' : 'bg-neutral-100 border-neutral-300 focus-within:border-orange-500'
+              darkMode ? 'bg-neutral-950 border-neutral-800 focus-within:border-orange-600' : 'bg-neutral-100 border-neutral-300 focus-within:border-orange-600'
             }`}>
               <input 
                 type="text" 
@@ -663,7 +859,7 @@ export default function Home() {
                 placeholder="Rechercher un produit..." 
                 className="w-full bg-transparent px-3 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-sm outline-none placeholder-neutral-500 truncate"
               />
-              <button type="submit" className="bg-orange-600 hover:bg-orange-700 px-3 sm:px-4 py-1.5 sm:py-2 text-white transition flex items-center justify-center cursor-pointer flex-shrink-0">
+              <button type="submit" className="bg-orange-700 hover:bg-orange-800 px-3 sm:px-4 py-1.5 sm:py-2 text-white transition flex items-center justify-center cursor-pointer flex-shrink-0">
                 <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </div>
@@ -675,14 +871,31 @@ export default function Home() {
             <button 
               onClick={() => handleProtectedAction('/orders')}
               className={`hidden md:flex items-center gap-1.5 px-2.5 py-2 rounded-full border text-xs font-bold transition cursor-pointer relative ${
-                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-500 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-500 text-neutral-700'
+                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-600 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-600 text-neutral-700'
               }`}
             >
-              <Package className="w-4 h-4 text-orange-500" />
+              <Package className="w-4 h-4 text-orange-600" />
               <span>Commandes</span>
               {ordersCount > 0 && (
-                <span className="bg-orange-600 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
+                <span className="bg-orange-700 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
                   {ordersCount}
+                </span>
+              )}
+            </button>
+
+            {/* NOUVEAU : Panier (desktop) */}
+            <button 
+              onClick={() => handleProtectedAction('/cart')}
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-2 rounded-full border text-xs font-bold transition cursor-pointer relative ${
+                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-600 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-600 text-neutral-700'
+              }`}
+              title="Panier"
+            >
+              <ShoppingCart className="w-4 h-4 text-orange-600" />
+              <span>Panier</span>
+              {cartCount > 0 && (
+                <span className="bg-orange-700 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
+                  {cartCount}
                 </span>
               )}
             </button>
@@ -690,11 +903,11 @@ export default function Home() {
             <button 
               onClick={handleOpenMessages}
               className={`hidden md:flex items-center gap-1.5 px-2.5 py-2 rounded-full border text-xs font-bold transition cursor-pointer relative ${
-                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-500 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-500 text-neutral-700'
+                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-600 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-600 text-neutral-700'
               }`}
               title="Messages"
             >
-              <MessageSquare className="w-4 h-4 text-orange-500" />
+              <MessageSquare className="w-4 h-4 text-orange-600" />
               <span>Messages</span>
               {unreadMessagesCount > 0 && (
                 <span className="bg-red-600 text-white text-[10px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
@@ -706,11 +919,11 @@ export default function Home() {
             <button 
               onClick={handleOpenNotifications}
               className={`hidden md:flex items-center p-2 rounded-full border transition cursor-pointer relative ${
-                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-500 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-500 text-neutral-700'
+                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-600 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-600 text-neutral-700'
               }`}
               title="Notifications"
             >
-              <Bell className="w-4 h-4 text-orange-500" />
+              <Bell className="w-4 h-4 text-orange-600" />
               {unreadNotifsCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
                   {unreadNotifsCount}
@@ -720,7 +933,7 @@ export default function Home() {
 
             <button 
               onClick={() => handleProtectedAction('/create-product')}
-              className="hidden sm:flex items-center gap-1 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs px-4 py-2 rounded-full transition shadow-md shadow-orange-600/20 cursor-pointer"
+              className="hidden sm:flex items-center gap-1 bg-orange-700 hover:bg-orange-800 text-white font-bold text-xs px-4 py-2 rounded-full transition shadow-md shadow-orange-700/20 cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
               <span>Vendre</span>
@@ -736,12 +949,12 @@ export default function Home() {
                   }`}
                   title="Profil & Portefeuille"
                 >
-                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-orange-600 text-white font-bold text-xs flex items-center justify-center overflow-hidden flex-shrink-0">
+                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-orange-700 text-white font-bold text-xs flex items-center justify-center overflow-hidden flex-shrink-0">
                     {memoizedAvatar}
                   </div>
                   <div className="hidden sm:flex flex-col text-left">
-                    <span className="text-[10px] text-neutral-400 leading-none flex items-center gap-1">Solde <Wallet className="w-3 h-3 text-orange-500" /></span>
-                    <span className="text-xs font-black text-orange-500">{user?.balance ?? 0} $</span>
+                    <span className="text-[10px] text-neutral-400 leading-none flex items-center gap-1">Solde <Wallet className="w-3 h-3 text-orange-600" /></span>
+                    <span className="text-xs font-black text-orange-600">{user?.balance ?? 0} $</span>
                   </div>
                 </button>
                 <button onClick={handleLogout} className="p-2 rounded-full bg-red-600/20 border border-red-800 text-red-400 hover:bg-red-600 hover:text-white transition cursor-pointer hidden sm:block" title="Se déconnecter">
@@ -751,7 +964,7 @@ export default function Home() {
             ) : (
               <div className="flex items-center gap-1">
                 <Link to="/login" className="px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-bold bg-neutral-800 text-white transition hover:bg-neutral-700">Connexion</Link>
-                <Link to="/register" className="px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-bold bg-orange-600 text-white hidden sm:block transition hover:bg-orange-700">Inscription</Link>
+                <Link to="/register" className="px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-bold bg-orange-700 text-white hidden sm:block transition hover:bg-orange-800">Inscription</Link>
               </div>
             )}
 
@@ -759,7 +972,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setShowThemeMenu(prev => !prev); }}
-                className={`p-2 rounded-full border transition cursor-pointer ${darkMode ? 'bg-neutral-950 border-neutral-800 text-orange-400 hover:border-orange-500' : 'bg-white border-neutral-300 text-orange-600 hover:border-orange-500'}`}
+                className={`p-2 rounded-full border transition cursor-pointer ${darkMode ? 'bg-neutral-950 border-neutral-800 text-orange-500 hover:border-orange-600' : 'bg-white border-neutral-300 text-orange-700 hover:border-orange-600'}`}
                 title="Apparence"
                 aria-label="Choisir le thème"
               >
@@ -772,7 +985,7 @@ export default function Home() {
                     { key: 'light' as const, label: 'Clair', icon: Sun },
                     { key: 'dark' as const, label: 'Sombre', icon: Moon },
                   ].map(({ key, label, icon: Icon }) => (
-                    <button key={key} type="button" onClick={() => { setThemeMode(key); setShowThemeMenu(false); }} className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs transition ${themeMode === key ? 'bg-orange-600 text-white' : darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}>
+                    <button key={key} type="button" onClick={() => { setThemeMode(key); setShowThemeMenu(false); }} className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs transition ${themeMode === key ? 'bg-orange-700 text-white' : darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}>
                       <span className="flex items-center gap-2"><Icon className="w-3.5 h-3.5" />{label}</span>
                       {themeMode === key && <Check className="w-3.5 h-3.5" />}
                     </button>
@@ -790,7 +1003,7 @@ export default function Home() {
       }`}>
         <Link 
           to="/" 
-          className={`flex flex-col items-center justify-center flex-1 py-1 transition ${location.pathname === '/' ? 'text-orange-500 font-bold' : 'hover:text-orange-500'}`}
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition ${location.pathname === '/' ? 'text-orange-600 font-bold' : 'hover:text-orange-600'}`}
         >
           <HomeIcon className="w-5 h-5 mb-0.5" />
           <span className="text-[10px]">Accueil</span>
@@ -798,12 +1011,12 @@ export default function Home() {
 
         <button 
           onClick={() => handleProtectedAction('/orders')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/orders') ? 'text-orange-500 font-bold' : 'hover:text-orange-500'}`}
+          className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/orders') ? 'text-orange-600 font-bold' : 'hover:text-orange-600'}`}
         >
           <Package className="w-5 h-5 mb-0.5" />
           <span className="text-[10px]">Commandes</span>
           {ordersCount > 0 && (
-            <span className="absolute top-0 right-4 bg-orange-600 text-white text-[9px] font-bold px-1 rounded-full">
+            <span className="absolute top-0 right-4 bg-orange-700 text-white text-[9px] font-bold px-1 rounded-full">
               {ordersCount}
             </span>
           )}
@@ -812,17 +1025,17 @@ export default function Home() {
         <div className="flex flex-col items-center justify-center flex-1 -mt-4">
           <button 
             onClick={() => handleProtectedAction('/create-product')}
-            className="w-12 h-12 bg-orange-600 hover:bg-orange-700 text-white rounded-full flex items-center justify-center shadow-lg shadow-orange-600/40 border-4 border-neutral-950 cursor-pointer transition transform active:scale-95"
+            className="w-12 h-12 bg-orange-700 hover:bg-orange-800 text-white rounded-full flex items-center justify-center shadow-lg shadow-orange-700/40 border-4 border-neutral-950 cursor-pointer transition transform active:scale-95"
             title="Publier un article"
           >
             <Camera className="w-6 h-6" />
           </button>
-          <span className="text-[10px] font-bold text-orange-500 mt-0.5">Poster</span>
+          <span className="text-[10px] font-bold text-orange-600 mt-0.5">Poster</span>
         </div>
 
         <button 
           onClick={handleOpenMessages}
-          className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/messages') ? 'text-orange-500 font-bold' : 'hover:text-orange-500'}`}
+          className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/messages') ? 'text-orange-600 font-bold' : 'hover:text-orange-600'}`}
         >
           <MessageSquare className="w-5 h-5 mb-0.5" />
           <span className="text-[10px]">Messages</span>
@@ -835,7 +1048,7 @@ export default function Home() {
 
         <button 
           onClick={() => handleProtectedAction('/wallet')}
-          className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/wallet') ? 'text-orange-500 font-bold' : 'hover:text-orange-500'}`}
+          className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/wallet') ? 'text-orange-600 font-bold' : 'hover:text-orange-600'}`}
         >
           <UserIcon className="w-5 h-5 mb-0.5" />
           <span className="text-[10px]">Profil</span>
@@ -844,21 +1057,177 @@ export default function Home() {
 
       {/* CONTENU PRINCIPAL — flex-1 pour occuper l'espace restant et repousser le footer en bas */}
       <main className="flex-1 pb-20 sm:pb-0">
+
+        {/* ============ NOUVEAU : REELS / VIDÉOS PRODUITS (30s max) ============ */}
+        <section className="max-w-7xl mx-auto px-2 sm:px-4 pt-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Video className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
+            <h2 className="text-sm sm:text-lg font-extrabold tracking-tight">Reels produits</h2>
+          </div>
+
+          {loadingReels ? (
+            <div className="flex gap-3 overflow-x-hidden pb-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className={`w-[110px] sm:w-[140px] aspect-[9/16] rounded-xl flex-shrink-0 animate-pulse ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
+              ))}
+            </div>
+          ) : displayedReels.length === 0 ? (
+            <div className={`text-center py-6 text-[11px] rounded-xl border ${darkMode ? 'text-neutral-500 border-neutral-800 bg-neutral-900/30' : 'text-neutral-500 border-neutral-200 bg-white'}`}>
+              Aucune vidéo produit pour le moment.
+            </div>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
+              {displayedReels.map((reel) => (
+                <div
+                  key={reel.id}
+                  className="relative w-[110px] sm:w-[140px] aspect-[9/16] rounded-xl overflow-hidden flex-shrink-0 snap-start bg-black cursor-pointer group"
+                  onClick={() => goToProductDetails(reel.productId)}
+                >
+                  <video
+                    ref={(el) => { videoRefs.current[reel.id] = el; if (el) el.muted = isReelMuted(reel.id); }}
+                    src={reel.videoUrl}
+                    poster={reel.thumbnail}
+                    loop
+                    playsInline
+                    autoPlay
+                    className="w-full h-full object-cover"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleReelMute(reel.id); }}
+                    className="absolute top-1.5 right-1.5 p-1.5 rounded-full bg-black/60 text-white z-10"
+                  >
+                    {isReelMuted(reel.id) ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                  </button>
+
+                  {reel.product && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); goToProductDetails(reel.productId); }}
+                      className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center gap-1 bg-black/70 backdrop-blur-md rounded-full pl-0.5 pr-2 py-0.5 border border-white/10"
+                    >
+                      <img src={getImageUrl(reel.product.images?.[0])} className="w-4 h-4 rounded-full object-cover flex-shrink-0" alt="" />
+                      <span className="text-[8px] text-white font-bold truncate">{reel.product.title}</span>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ============ NOUVEAU : POUR VOUS / ABONNEMENTS ============ */}
+        <section className="max-w-7xl mx-auto px-2 sm:px-4 pt-8">
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
+            <h2 className="text-sm sm:text-lg font-extrabold tracking-tight">Pour vous</h2>
+          </div>
+
+          {!token ? (
+            <div className={`text-center py-6 text-[11px] rounded-xl border ${darkMode ? 'text-neutral-500 border-neutral-800 bg-neutral-900/30' : 'text-neutral-500 border-neutral-200 bg-white'}`}>
+              Connectez-vous pour suivre vos vendeurs préférés et voir leurs nouveautés ici.
+            </div>
+          ) : followedFeed.length > 0 ? (
+            <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
+              {followedFeed.map((product) => {
+                const productId = product.id || product._id;
+                const sellerId = product.sellerId || product.userId || product.seller?.id || product.seller?._id;
+                return (
+                  <div key={productId} className={`w-[130px] sm:w-[170px] flex-shrink-0 rounded-xl overflow-hidden border snap-start ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+                    <div className="aspect-square w-full cursor-pointer" onClick={() => goToProductDetails(productId)}>
+                      <img src={getImageUrl(product.images?.[0])} alt={product.title} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="p-2">
+                      <p className="text-[10px] font-bold truncate">{product.title}</p>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-[10px] text-neutral-400 truncate max-w-[70px]">{product.seller?.name || 'Vendeur'}</span>
+                        <button
+                          type="button"
+                          disabled={followLoadingId === sellerId}
+                          onClick={() => toggleFollow(sellerId)}
+                          className="text-orange-600 flex-shrink-0"
+                          title="Se désabonner"
+                        >
+                          <UserCheck className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div>
+              <p className={`text-[11px] mb-3 ${darkMode ? 'text-neutral-500' : 'text-neutral-500'}`}>Vous ne suivez encore aucun vendeur. Découvrez-en quelques-uns :</p>
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                {suggestedSellers.map((seller) => (
+                  <button
+                    key={seller.id}
+                    type="button"
+                    disabled={followLoadingId === seller.id}
+                    onClick={() => toggleFollow(seller.id)}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-full border text-[11px] font-bold flex-shrink-0 transition ${darkMode ? 'bg-neutral-900 border-neutral-800 hover:border-orange-600' : 'bg-white border-neutral-200 hover:border-orange-600'}`}
+                  >
+                    <span className="w-5 h-5 rounded-full bg-orange-700 text-white flex items-center justify-center text-[9px] font-black">{getInitials(seller.name)}</span>
+                    <span className="truncate max-w-[80px]">{seller.name}</span>
+                    <UserPlus className="w-3.5 h-3.5 text-orange-600" />
+                  </button>
+                ))}
+                {suggestedSellers.length === 0 && (
+                  <span className="text-[11px] text-neutral-500">Aucun vendeur disponible pour le moment.</span>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* ============ CATALOGUE + CATÉGORIES DYNAMIQUES ============ */}
         <section className="max-w-7xl mx-auto px-2 sm:px-4 py-6">
-          <div className="flex justify-between items-center mb-5 border-b border-neutral-800 pb-3">
+          <div className="flex justify-between items-center mb-4 border-b border-neutral-800 pb-3">
             <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-orange-500" />
+              <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
               <h2 className="text-base sm:text-2xl font-extrabold tracking-tight">BYA BIKO DISPO</h2>
             </div>
-            <Link to="/products" className="text-orange-500 hover:text-orange-400 font-semibold text-[11px] sm:text-xs uppercase tracking-wider transition flex items-center gap-1">
+            <Link to="/products" className="text-orange-600 hover:text-orange-500 font-semibold text-[11px] sm:text-xs uppercase tracking-wider transition flex items-center gap-1">
               Catalogue complet &rarr;
             </Link>
           </div>
 
+          {/* NOUVEAU : chips de catégories dynamiques (calculées depuis /products) */}
+          {dynamicCategories.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-3 mb-3 scrollbar-hide">
+              <button
+                type="button"
+                onClick={() => setActiveCategory(null)}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex-shrink-0 transition border ${!activeCategory ? 'bg-orange-700 text-white border-orange-700' : darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-300' : 'bg-white border-neutral-200 text-neutral-700'}`}
+              >
+                Tous
+              </button>
+              {dynamicCategories.map((cat) => (
+                <button
+                  key={cat.name}
+                  type="button"
+                  onClick={() => setActiveCategory(cat.name === activeCategory ? null : cat.name)}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex-shrink-0 transition border ${activeCategory === cat.name ? 'bg-orange-700 text-white border-orange-700' : darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-300' : 'bg-white border-neutral-200 text-neutral-700'}`}
+                >
+                  {cat.name} <span className="opacity-70">({cat.count})</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {loadingProducts ? (
-            <div className="text-center py-16 text-neutral-500 text-xs flex flex-col items-center justify-center gap-3">
-              <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-              Chargement des meilleures offres...
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
+              {[...Array(8)].map((_, i) => (
+                <div key={i} className={`rounded-xl sm:rounded-2xl overflow-hidden border animate-pulse ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+                  <div className={`aspect-[1/1] sm:aspect-[4/3] w-full ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
+                  <div className="p-2 sm:p-4 space-y-2">
+                    <div className={`h-2.5 w-3/4 rounded ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
+                    <div className={`h-2.5 w-1/2 rounded ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : displayedProducts.length === 0 ? (
             <div className="text-center py-16 text-neutral-500 text-xs bg-neutral-900/30 rounded-2xl border border-neutral-800">
@@ -892,7 +1261,7 @@ export default function Home() {
                     viewport={{ once: true }}
                     transition={{ duration: 0.3, delay: index * 0.02 }}
                     onClick={() => goToProductDetails(productId)}
-                    className={`rounded-xl sm:rounded-2xl overflow-hidden border group shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between cursor-pointer hover:border-orange-500 hover:-translate-y-1 ${
+                    className={`rounded-xl sm:rounded-2xl overflow-hidden border group shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between cursor-pointer hover:border-orange-600 hover:-translate-y-1 ${
                       darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'
                     }`}
                   >
@@ -913,22 +1282,22 @@ export default function Home() {
                             (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=500&q=80';
                           }}
                         />
-                        <span className="absolute top-1 left-1 sm:top-2 sm:left-2 bg-black/80 backdrop-blur-md text-[8px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded text-orange-400 border border-neutral-700 truncate max-w-[70px] sm:max-w-[100px]">
+                        <span className="absolute top-1 left-1 sm:top-2 sm:left-2 bg-black/80 backdrop-blur-md text-[8px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded text-orange-500 border border-neutral-700 truncate max-w-[70px] sm:max-w-[100px]">
                           {prodCategory}
                         </span>
 
                         {isRequestPost(product) && (
-                          <span className="absolute top-1 right-1 sm:top-2 sm:right-2 bg-orange-600 text-white text-[8px] sm:text-[10px] font-extrabold px-2 py-1 rounded-full shadow-lg">DEMANDE</span>
+                          <span className="absolute top-1 right-1 sm:top-2 sm:right-2 bg-orange-700 text-white text-[8px] sm:text-[10px] font-extrabold px-2 py-1 rounded-full shadow-lg">DEMANDE</span>
                         )}
 
-                        <button type="button" onClick={(e) => { e.stopPropagation(); setOpenProductMenu(openProductMenu === String(productId) ? null : String(productId)); }} className={`absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 rounded-full backdrop-blur-md border transition ${isRequestPost(product) ? 'right-1 sm:right-2 top-8 sm:top-10' : ''} ${darkMode ? 'bg-black/60 border-white/10 text-white hover:bg-orange-600' : 'bg-white/80 border-black/10 text-neutral-700 hover:bg-orange-600 hover:text-white'}`} title="Plus d’options">
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setOpenProductMenu(openProductMenu === String(productId) ? null : String(productId)); }} className={`absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 rounded-full backdrop-blur-md border transition ${isRequestPost(product) ? 'right-1 sm:right-2 top-8 sm:top-10' : ''} ${darkMode ? 'bg-black/60 border-white/10 text-white hover:bg-orange-700' : 'bg-white/80 border-black/10 text-neutral-700 hover:bg-orange-700 hover:text-white'}`} title="Plus d’options">
                           <MoreHorizontal className="w-4 h-4" />
                         </button>
 
                         {openProductMenu === String(productId) && (
                           <div className={`absolute top-11 right-1 sm:top-12 sm:right-2 w-40 rounded-xl border shadow-2xl p-1.5 z-20 ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`} onClick={(e) => e.stopPropagation()}>
                             <button type="button" onClick={() => { setOpenProductMenu(null); goToProductDetails(productId); }} className={`w-full text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}>Voir l’annonce</button>
-                            <button type="button" onClick={() => shareProduct(product)} className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}><Share2 className="w-3.5 h-3.5 text-orange-500" />Partager</button>
+                            <button type="button" onClick={() => shareProduct(product)} className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}><Share2 className="w-3.5 h-3.5 text-orange-600" />Partager</button>
                             <button type="button" onClick={() => { setOpenProductMenu(null); handleProtectedAction('/messages'); }} className={`w-full text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}>Contacter</button>
                             <button type="button" onClick={() => setOpenProductMenu(null)} className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-red-400 hover:bg-neutral-800' : 'text-red-600 hover:bg-neutral-100'}`}><Flag className="w-3.5 h-3.5" />Signaler</button>
                           </div>
@@ -936,7 +1305,7 @@ export default function Home() {
 
                         {photosCount > 0 && (
                           <span className="absolute bottom-1 right-1 bg-black/75 backdrop-blur-md text-white text-[8px] sm:text-[10px] font-bold px-1 py-0.5 rounded flex items-center gap-0.5 border border-neutral-700/60 shadow">
-                            <ImageIcon className="w-2.5 h-2.5 text-orange-400" />
+                            <ImageIcon className="w-2.5 h-2.5 text-orange-500" />
                             <span>{photosCount}</span>
                           </span>
                         )}
@@ -945,13 +1314,13 @@ export default function Home() {
                       <div className="p-1.5 sm:p-4">
                         <div className="flex justify-between items-center text-[8px] sm:text-[11px] text-neutral-400 mb-0.5">
                           <span className="truncate max-w-[50px] sm:max-w-[120px]" title={posterName}><strong>{posterName}</strong></span>
-                          <span className="flex items-center gap-0.5"><MapPin className="w-2 h-2 text-orange-500" /> Bukavu</span>
+                          <span className="flex items-center gap-0.5"><MapPin className="w-2 h-2 text-orange-600" /> Bukavu</span>
                         </div>
 
-                        <h3 className="font-bold text-[9px] sm:text-sm mb-1 truncate group-hover:text-orange-500 transition leading-tight">{prodTitle}</h3>
+                        <h3 className="font-bold text-[9px] sm:text-sm mb-1 truncate group-hover:text-orange-600 transition leading-tight">{prodTitle}</h3>
 
                         <div>
-                          <div className="text-orange-500 font-black text-[9px] sm:text-sm leading-none">
+                          <div className="text-orange-600 font-black text-[9px] sm:text-sm leading-none">
                             {priceUSDStr}
                           </div>
                           {priceCDFStr && (
@@ -969,7 +1338,7 @@ export default function Home() {
                           e.stopPropagation();
                           goToProductDetails(productId);
                         }}
-                        className="w-full py-1 sm:py-2 bg-orange-600/10 hover:bg-orange-600 hover:text-white text-orange-500 font-bold text-[8px] sm:text-xs rounded-md sm:rounded-xl transition border border-orange-500/20 flex items-center justify-center gap-0.5 cursor-pointer"
+                        className="w-full py-1 sm:py-2 bg-orange-700/10 hover:bg-orange-700 hover:text-white text-orange-600 font-bold text-[8px] sm:text-xs rounded-md sm:rounded-xl transition border border-orange-600/20 flex items-center justify-center gap-0.5 cursor-pointer"
                       >
                         <span>Voir</span> <span className="hidden sm:inline">({photosCount} 📷)</span>
                       </button>
@@ -980,6 +1349,40 @@ export default function Home() {
             </div>
           )}
         </section>
+
+        {/* ============ NOUVEAU : PETIT ENCART FEEDBACK ============ */}
+        <section className="max-w-3xl mx-auto px-4 pb-8">
+          <div className={`rounded-2xl border p-5 sm:p-6 text-center ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+            <h3 className="font-extrabold text-sm sm:text-base mb-1 flex items-center justify-center gap-2">
+              <Sparkles className="w-4 h-4 text-orange-600" /> Aidez-nous à améliorer CBF SOKO
+            </h3>
+            <p className="text-[11px] sm:text-xs text-neutral-500 mb-4">
+              Cette page évolue vers plus de social-commerce : dites-nous ce qui vous plaît ou ce qui manque.
+            </p>
+            {feedbackSent ? (
+              <p className="text-orange-600 font-bold text-xs">Merci pour votre retour 🙏</p>
+            ) : (
+              <form onSubmit={handleSendFeedback} className="flex flex-col sm:flex-row gap-2 max-w-xl mx-auto">
+                <input
+                  type="text"
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  placeholder="Une suggestion, un bug, une idée…"
+                  className={`flex-1 px-4 py-2.5 rounded-full border text-xs outline-none focus:border-orange-600 ${darkMode ? 'bg-neutral-950 border-neutral-800 text-white placeholder-neutral-500' : 'bg-neutral-100 border-neutral-300 placeholder-neutral-400'}`}
+                />
+                <button
+                  type="submit"
+                  disabled={sendingFeedback || !feedbackText.trim()}
+                  className="bg-orange-700 hover:bg-orange-800 disabled:opacity-50 text-white font-bold text-xs px-5 py-2.5 rounded-full transition flex items-center justify-center gap-1.5"
+                >
+                  {sendingFeedback ? '...' : <>Envoyer <Send className="w-3.5 h-3.5" /></>}
+                </button>
+              </form>
+            )}
+            {feedbackError && <p className="text-red-500 text-[10px] mt-2">Échec de l'envoi, réessayez plus tard.</p>}
+          </div>
+        </section>
+
       </main>
 
       {/* FOOTER — flux normal, tout en bas de page (pas fixed), façon Facebook avec liens légaux */}
@@ -992,7 +1395,7 @@ export default function Home() {
             {/* Colonne marque */}
             <div className="col-span-2 md:col-span-1">
               <div className="flex items-center gap-2.5 mb-3">
-                <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center overflow-hidden shadow-md border border-orange-500 relative flex-shrink-0">
+                <div className="w-10 h-10 bg-orange-700 rounded-xl flex items-center justify-center overflow-hidden shadow-md border border-orange-600 relative flex-shrink-0">
                   <img 
                     src={LOGO_URL} 
                     alt="CBF SOKO Logo" 
@@ -1008,10 +1411,10 @@ export default function Home() {
                 La plateforme de confiance pour vos achats et ventes en RDC. Bukavu, Sud-Kivu.
               </p>
               <div className="flex items-center gap-2">
-  <a href="#" aria-label="Facebook" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-600 hover:text-white flex items-center justify-center transition"><FacebookIcon className="w-3.5 h-3.5" /></a>
-  <a href="#" aria-label="Instagram" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-600 hover:text-white flex items-center justify-center transition"><InstagramIcon className="w-3.5 h-3.5" /></a>
-  <a href="#" aria-label="Twitter / X" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-600 hover:text-white flex items-center justify-center transition"><TwitterIcon className="w-3.5 h-3.5" /></a>
-  <a href="#" aria-label="Youtube" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-600 hover:text-white flex items-center justify-center transition"><YoutubeIcon className="w-3.5 h-3.5" /></a>
+  <a href="#" aria-label="Facebook" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-700 hover:text-white flex items-center justify-center transition"><FacebookIcon className="w-3.5 h-3.5" /></a>
+  <a href="#" aria-label="Instagram" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-700 hover:text-white flex items-center justify-center transition"><InstagramIcon className="w-3.5 h-3.5" /></a>
+  <a href="#" aria-label="Twitter / X" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-700 hover:text-white flex items-center justify-center transition"><TwitterIcon className="w-3.5 h-3.5" /></a>
+  <a href="#" aria-label="Youtube" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-700 hover:text-white flex items-center justify-center transition"><YoutubeIcon className="w-3.5 h-3.5" /></a>
 </div>
             </div>
 
@@ -1019,10 +1422,11 @@ export default function Home() {
             <div>
               <h4 className={`text-xs font-extrabold uppercase tracking-wider mb-3 ${darkMode ? 'text-white' : 'text-neutral-900'}`}>Découvrir</h4>
               <ul className="flex flex-col gap-2 text-[12px]">
-                <li><Link to="/products" className="hover:text-orange-500 transition">Catalogue</Link></li>
-                <li><Link to="/create-product" className="hover:text-orange-500 transition">Vendre un article</Link></li>
-                <li><Link to="/wallet" className="hover:text-orange-500 transition">Portefeuille</Link></li>
-                <li><Link to="/orders" className="hover:text-orange-500 transition">Mes commandes</Link></li>
+                <li><Link to="/products" className="hover:text-orange-600 transition">Catalogue</Link></li>
+                <li><Link to="/create-product" className="hover:text-orange-600 transition">Vendre un article</Link></li>
+                <li><Link to="/wallet" className="hover:text-orange-600 transition">Portefeuille</Link></li>
+                <li><Link to="/orders" className="hover:text-orange-600 transition">Mes commandes</Link></li>
+                <li><Link to="/cart" className="hover:text-orange-600 transition">Mon panier</Link></li>
               </ul>
             </div>
 
@@ -1030,15 +1434,15 @@ export default function Home() {
             <div>
               <h4 className={`text-xs font-extrabold uppercase tracking-wider mb-3 ${darkMode ? 'text-white' : 'text-neutral-900'}`}>Assistance</h4>
               <ul className="flex flex-col gap-2 text-[12px]">
-                <li><Link to="/messages" className="hover:text-orange-500 transition">Centre d'aide</Link></li>
-                <li><Link to="/messages" className="hover:text-orange-500 transition">Nous contacter</Link></li>
+                <li><Link to="/messages" className="hover:text-orange-600 transition">Centre d'aide</Link></li>
+                <li><Link to="/messages" className="hover:text-orange-600 transition">Nous contacter</Link></li>
                 <li>
-                  <a href="mailto:support@cbfsoko.com" className="hover:text-orange-500 transition flex items-center gap-1.5">
+                  <a href="mailto:support@cbfsoko.com" className="hover:text-orange-600 transition flex items-center gap-1.5">
                     <Mail className="w-3 h-3" /> support@cbfsoko.com
                   </a>
                 </li>
                 <li>
-                  <a href="tel:+243971658685" className="hover:text-orange-500 transition flex items-center gap-1.5">
+                  <a href="tel:+243971658685" className="hover:text-orange-600 transition flex items-center gap-1.5">
                     <Phone className="w-3 h-3" /> +243 971 658 685
                   </a>
                 </li>
@@ -1049,10 +1453,10 @@ export default function Home() {
             <div>
               <h4 className={`text-xs font-extrabold uppercase tracking-wider mb-3 ${darkMode ? 'text-white' : 'text-neutral-900'}`}>Légal</h4>
               <ul className="flex flex-col gap-2 text-[12px]">
-                <li><button type="button" onClick={() => setLegalPanel('terms')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><FileText className="w-3 h-3" /> Conditions d'utilisation</button></li>
-                <li><button type="button" onClick={() => setLegalPanel('privacy')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><ShieldCheck className="w-3 h-3" /> Politique de confidentialité</button></li>
-                <li><button type="button" onClick={() => setLegalPanel('cookies')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><Cookie className="w-3 h-3" /> Politique de cookies</button></li>
-                <li><button type="button" onClick={() => setLegalPanel('mentions')} className="hover:text-orange-500 transition flex items-center gap-1.5 text-left"><Scale className="w-3 h-3" /> Mentions légales</button></li>
+                <li><button type="button" onClick={() => setLegalPanel('terms')} className="hover:text-orange-600 transition flex items-center gap-1.5 text-left"><FileText className="w-3 h-3" /> Conditions d'utilisation</button></li>
+                <li><button type="button" onClick={() => setLegalPanel('privacy')} className="hover:text-orange-600 transition flex items-center gap-1.5 text-left"><ShieldCheck className="w-3 h-3" /> Politique de confidentialité</button></li>
+                <li><button type="button" onClick={() => setLegalPanel('cookies')} className="hover:text-orange-600 transition flex items-center gap-1.5 text-left"><Cookie className="w-3 h-3" /> Politique de cookies</button></li>
+                <li><button type="button" onClick={() => setLegalPanel('mentions')} className="hover:text-orange-600 transition flex items-center gap-1.5 text-left"><Scale className="w-3 h-3" /> Mentions légales</button></li>
                 
               </ul>
             </div>
@@ -1063,7 +1467,7 @@ export default function Home() {
             <span>&copy; {new Date().getFullYear()} CBF SOKO. Tous droits réservés.</span>
             <div className="flex items-center gap-4">
               <span>Français (RDC)</span>
-              <span className="flex items-center gap-1"><MapPin className="w-3 h-3 text-orange-500" /> Bukavu, RDC</span>
+              <span className="flex items-center gap-1"><MapPin className="w-3 h-3 text-orange-600" /> Bukavu, RDC</span>
             </div>
           </div>
         </div>
@@ -1077,11 +1481,11 @@ export default function Home() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/50" onClick={() => setLegalPanel(null)}>
               <motion.aside initial={{ x: '-105%' }} animate={{ x: 0 }} exit={{ x: '-105%' }} transition={{ type: 'tween', duration: 0.35 }} onClick={(e) => e.stopPropagation()} className={`absolute left-0 top-0 bottom-0 w-[92vw] sm:w-[58vw] lg:w-[52vw] max-w-[760px] border-r shadow-2xl overflow-y-auto ${darkMode ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-200 text-neutral-900'}`}>
                 <div className={`sticky top-0 z-10 flex items-center justify-between px-5 sm:px-7 py-4 border-b backdrop-blur-md ${darkMode ? 'bg-neutral-950/95 border-neutral-800' : 'bg-white/95 border-neutral-200'}`}>
-                  <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-orange-500/10 text-orange-500 flex items-center justify-center"><LegalIcon className="w-5 h-5" /></div><div><h2 className="font-black text-sm sm:text-base">{legal.title}</h2><p className="text-[10px] text-neutral-500 mt-0.5">CBF SOKO</p></div></div>
+                  <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-orange-600/10 text-orange-600 flex items-center justify-center"><LegalIcon className="w-5 h-5" /></div><div><h2 className="font-black text-sm sm:text-base">{legal.title}</h2><p className="text-[10px] text-neutral-500 mt-0.5">CBF SOKO</p></div></div>
                   <button type="button" onClick={() => setLegalPanel(null)} className={`p-2 rounded-full transition ${darkMode ? 'hover:bg-neutral-800 text-neutral-400' : 'hover:bg-neutral-100 text-neutral-500'}`}><X className="w-5 h-5" /></button>
                 </div>
                 <div className="px-5 sm:px-8 py-7 space-y-6">
-                  {legal.sections.map(([title, text]) => <section key={title}><h3 className="font-extrabold text-xs sm:text-sm text-orange-500 mb-2">{title}</h3><p className={`text-xs sm:text-sm leading-6 ${darkMode ? 'text-neutral-300' : 'text-neutral-600'}`}>{text}</p></section>)}
+                  {legal.sections.map(([title, text]) => <section key={title}><h3 className="font-extrabold text-xs sm:text-sm text-orange-600 mb-2">{title}</h3><p className={`text-xs sm:text-sm leading-6 ${darkMode ? 'text-neutral-300' : 'text-neutral-600'}`}>{text}</p></section>)}
                 </div>
               </motion.aside>
             </motion.div>
