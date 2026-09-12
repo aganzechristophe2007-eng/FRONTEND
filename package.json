@@ -20,6 +20,7 @@
     "express-session": "^1.19.0",
     "framer-motion": "^11.0.8",
     "heic2any": "^0.0.4",
+    "i18next": "^26.4.2",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.34.0",
     "passport": "^0.7.0",
@@ -27,6 +28,7 @@
     "react": "^18.2.0",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^18.2.0",
+    "react-i18next": "^17.0.13",
     "react-router-dom": "^6.22.2",
     "socket.io-client": "^4.8.3"
   },

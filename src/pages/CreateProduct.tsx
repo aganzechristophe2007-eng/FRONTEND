@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, X, ArrowLeft, Check, Sparkles, ShoppingBag, Sun, Moon, ArrowRight } from 'lucide-react';
+import { 
+  Upload, X, ArrowLeft, Check, Sparkles, ShoppingBag, Sun, Moon, ArrowRight, 
+  Video, PlayCircle, SkipForward, CheckCircle2, AlertCircle, Clock
+} from 'lucide-react';
 import { apiFetch } from '../api/client';
 
 const EXCHANGE_RATE = 2300; // 1 USD = 2300 CDF
+const MAX_VIDEO_SECONDS = 30;
 
 interface Category {
   id: string;
@@ -56,6 +60,24 @@ const compressImage = (file: File): Promise<File> => {
   });
 };
 
+// NOUVEAU : vérifie la durée d'une vidéo avant de l'accepter (contrainte 30s max des "Reels")
+const readVideoDuration = (file: File): Promise<number> => {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const videoEl = document.createElement('video');
+    videoEl.preload = 'metadata';
+    videoEl.src = url;
+    videoEl.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      resolve(videoEl.duration);
+    };
+    videoEl.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Impossible de lire cette vidéo."));
+    };
+  });
+};
+
 export default function CreateProduct() {
   const navigate = useNavigate();
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -68,6 +90,7 @@ export default function CreateProduct() {
   // 5: Quantité & État (si vente)
   // 6: Description
   // 7: Images
+  // 8: Vidéo produit (optionnelle, 30s max)
   const [currentStep, setCurrentStep] = useState<number>(1);
 
   const [postType, setPostType] = useState<'SALE' | 'REQUEST'>('SALE');
@@ -87,9 +110,18 @@ export default function CreateProduct() {
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
 
+  // NOUVEAU : état pour la vidéo produit
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoPreview, setVideoPreview] = useState<string>('');
+  const [videoError, setVideoError] = useState<string>('');
+  const [checkingVideo, setCheckingVideo] = useState<boolean>(false);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+
+  const totalSteps = postType === 'SALE' ? 8 : 7;
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -159,6 +191,38 @@ export default function CreateProduct() {
     setImagePreviews(prev => prev.filter((_, i) => i !== index));
   };
 
+  // NOUVEAU : sélection + validation de la vidéo produit (liée obligatoirement à ce produit)
+  const handleVideoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setVideoError('');
+    setCheckingVideo(true);
+
+    try {
+      const duration = await readVideoDuration(file);
+      if (duration > MAX_VIDEO_SECONDS) {
+        setVideoError(`Cette vidéo dure ${Math.round(duration)}s. Le maximum autorisé est ${MAX_VIDEO_SECONDS}s. Recadrez-la puis réessayez.`);
+        setCheckingVideo(false);
+        if (videoInputRef.current) videoInputRef.current.value = '';
+        return;
+      }
+      setVideoFile(file);
+      setVideoPreview(URL.createObjectURL(file));
+    } catch (err) {
+      setVideoError("Ce fichier vidéo n'a pas pu être lu.");
+    } finally {
+      setCheckingVideo(false);
+    }
+  };
+
+  const removeVideo = () => {
+    setVideoFile(null);
+    setVideoPreview('');
+    setVideoError('');
+    if (videoInputRef.current) videoInputRef.current.value = '';
+  };
+
   const handleSubmit = async () => {
     if (imageFiles.length < 2) {
       setError("Veuillez ajouter au moins 2 images obligatoires.");
@@ -201,6 +265,11 @@ export default function CreateProduct() {
         formData.append('images', optimizedFile);
       }
 
+      // NOUVEAU : la vidéo est toujours envoyée liée à CE produit (même formData/même requête)
+      if (videoFile) {
+        formData.append('video', videoFile);
+      }
+
       await apiFetch('/products', {
         method: 'POST',
         body: formData,
@@ -223,32 +292,64 @@ export default function CreateProduct() {
       isDarkMode ? 'bg-[#0a0a0c] text-slate-100' : 'bg-slate-50 text-slate-900'
     }`}>
       {/* Barre supérieure minimaliste */}
-      <div className="w-full max-w-xl flex justify-between items-center">
-        {currentStep > 1 ? (
-          <button 
-            onClick={() => { setError(''); setCurrentStep(currentStep - 1); }}
-            className={`text-xs font-semibold flex items-center gap-1 transition ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Précédent
-          </button>
-        ) : (
-          <Link to="/" className={`text-xs font-semibold transition ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}>
-            <ArrowLeft className="w-3.5 h-3.5 inline mr-1" /> Accueil
-          </Link>
-        )}
+      <div className="w-full max-w-xl flex flex-col gap-3">
+        <div className="flex justify-between items-center">
+          {currentStep > 1 ? (
+            <button 
+              onClick={() => { setError(''); setCurrentStep(currentStep - 1); }}
+              className={`text-xs font-semibold flex items-center gap-1 transition ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> Précédent
+            </button>
+          ) : (
+            <Link to="/" className={`text-xs font-semibold transition ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}>
+              <ArrowLeft className="w-3.5 h-3.5 inline mr-1" /> Accueil
+            </Link>
+          )}
 
-        <button
-          onClick={() => setIsDarkMode(!isDarkMode)}
-          className={`p-2 rounded-full transition ${isDarkMode ? 'text-amber-400 hover:bg-slate-800/50' : 'text-slate-700 hover:bg-slate-200'}`}
-        >
-          {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </button>
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className={`p-2 rounded-full transition ${isDarkMode ? 'text-amber-400 hover:bg-slate-800/50' : 'text-slate-700 hover:bg-slate-200'}`}
+          >
+            {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+        </div>
+
+        {/* NOUVEAU : barre de progression "pro" */}
+        <div className={`w-full h-1 rounded-full overflow-hidden ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`}>
+          <motion.div
+            className="h-full bg-gradient-to-r from-orange-700 to-amber-600 rounded-full"
+            initial={false}
+            animate={{ width: `${(currentStep / totalSteps) * 100}%` }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+          />
+        </div>
       </div>
 
       {/* Contenu central fluide (Type assistant textuel, sans cadres lourds) */}
       <div className="w-full max-w-md my-auto py-8">
-        {error && <div className="mb-4 text-center text-xs text-red-500 font-semibold">{error}</div>}
-        {success && <div className="mb-4 text-center text-xs text-emerald-500 font-semibold">Publication réussie ! Redirection...</div>}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mb-4 flex items-center justify-center gap-1.5 text-center text-xs text-red-500 font-semibold bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2"
+            >
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {error}
+            </motion.div>
+          )}
+          {success && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mb-4 flex items-center justify-center gap-1.5 text-center text-xs text-emerald-500 font-semibold bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> Publication réussie ! Redirection...
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <AnimatePresence mode="wait">
           {/* ÉTAPE 1 : Choix Vendre ou Chercher */}
@@ -270,7 +371,7 @@ export default function CreateProduct() {
                     isDarkMode ? 'bg-slate-900 text-white hover:bg-slate-800 border border-slate-800' : 'bg-white text-slate-900 hover:bg-slate-100 border border-slate-200 shadow-sm'
                   }`}
                 >
-                  <span className="flex items-center gap-2"><ShoppingBag className="w-4 h-4 text-orange-500" /> Vendre un produit</span>
+                  <span className="flex items-center gap-2"><ShoppingBag className="w-4 h-4 text-orange-600" /> Vendre un produit</span>
                   <ArrowRight className="w-4 h-4 text-slate-500" />
                 </button>
 
@@ -307,13 +408,13 @@ export default function CreateProduct() {
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder={postType === 'SALE' ? "Ex: iPhone 13 Pro 128Go" : "Ex: Recherche moto Haojue bon état"}
                   className={`w-full text-center bg-transparent border-b-2 py-3 text-base sm:text-lg font-bold outline-none transition ${
-                    isDarkMode ? 'border-slate-700 text-white focus:border-orange-500' : 'border-slate-300 text-slate-900 focus:border-orange-600'
+                    isDarkMode ? 'border-slate-700 text-white focus:border-orange-600' : 'border-slate-300 text-slate-900 focus:border-orange-700'
                   }`}
                 />
                 <button
                   disabled={!title.trim()}
                   onClick={() => setCurrentStep(3)}
-                  className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3.5 rounded-2xl transition disabled:opacity-40 text-xs mt-4 cursor-pointer"
+                  className="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl transition disabled:opacity-40 text-xs mt-4 cursor-pointer"
                 >
                   Continuer
                 </button>
@@ -342,7 +443,7 @@ export default function CreateProduct() {
                       onClick={() => setCategoryId(cat.id)}
                       className={`py-3 px-4 rounded-xl text-xs font-bold transition flex items-center justify-between cursor-pointer ${
                         isSelected 
-                          ? 'bg-orange-600 text-white shadow-md' 
+                          ? 'bg-orange-700 text-white shadow-md' 
                           : isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                       }`}
                     >
@@ -354,7 +455,7 @@ export default function CreateProduct() {
               </div>
               <button
                 onClick={() => setCurrentStep(4)}
-                className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3.5 rounded-2xl transition text-xs cursor-pointer mt-4"
+                className="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl transition text-xs cursor-pointer mt-4"
               >
                 Continuer
               </button>
@@ -378,14 +479,14 @@ export default function CreateProduct() {
                   <button 
                     type="button" 
                     onClick={() => toggleCurrency('USD')} 
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${currency === 'USD' ? 'bg-orange-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${currency === 'USD' ? 'bg-orange-700 text-white' : isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}
                   >
                     USD ($)
                   </button>
                   <button 
                     type="button" 
                     onClick={() => toggleCurrency('CDF')} 
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${currency === 'CDF' ? 'bg-orange-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${currency === 'CDF' ? 'bg-orange-700 text-white' : isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}
                   >
                     CDF (Francs)
                   </button>
@@ -398,13 +499,13 @@ export default function CreateProduct() {
                   onChange={(e) => handleAmountChange(e.target.value)}
                   placeholder="0.00"
                   className={`w-full text-center bg-transparent border-b-2 py-3 text-2xl font-black outline-none transition ${
-                    isDarkMode ? 'border-slate-700 text-white focus:border-orange-500' : 'border-slate-300 text-slate-900 focus:border-orange-600'
+                    isDarkMode ? 'border-slate-700 text-white focus:border-orange-600' : 'border-slate-300 text-slate-900 focus:border-orange-700'
                   }`}
                 />
                 <button
                   disabled={!amountInput}
                   onClick={() => setCurrentStep(postType === 'SALE' ? 5 : 6)}
-                  className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3.5 rounded-2xl transition disabled:opacity-40 text-xs cursor-pointer mt-4"
+                  className="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl transition disabled:opacity-40 text-xs cursor-pointer mt-4"
                 >
                   Continuer
                 </button>
@@ -450,7 +551,7 @@ export default function CreateProduct() {
                 </div>
                 <button
                   onClick={() => setCurrentStep(6)}
-                  className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3.5 rounded-2xl transition text-xs cursor-pointer mt-4"
+                  className="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl transition text-xs cursor-pointer mt-4"
                 >
                   Continuer
                 </button>
@@ -484,7 +585,7 @@ export default function CreateProduct() {
                 <button
                   disabled={!description.trim()}
                   onClick={() => setCurrentStep(7)}
-                  className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3.5 rounded-2xl transition disabled:opacity-40 text-xs cursor-pointer"
+                  className="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl transition disabled:opacity-40 text-xs cursor-pointer"
                 >
                   Continuer vers les photos
                 </button>
@@ -516,9 +617,9 @@ export default function CreateProduct() {
                   ))}
                   {imageFiles.length < 5 && (
                     <label className={`h-20 border border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition ${
-                      isDarkMode ? 'border-slate-700 text-slate-400 hover:border-orange-500' : 'border-slate-400 text-slate-600 hover:border-orange-600'
+                      isDarkMode ? 'border-slate-700 text-slate-400 hover:border-orange-600' : 'border-slate-400 text-slate-600 hover:border-orange-700'
                     }`}>
-                      <Upload className="w-4 h-4 text-orange-500 mb-1" />
+                      <Upload className="w-4 h-4 text-orange-600 mb-1" />
                       <span className="text-[10px]">Photo</span>
                       <input type="file" accept="image/*" multiple onChange={handleImageChange} className="hidden" />
                     </label>
@@ -530,9 +631,66 @@ export default function CreateProduct() {
                 </p>
 
                 <button
-                  disabled={loading || imageFiles.length < 2}
+                  disabled={imageFiles.length < 2}
+                  onClick={() => setCurrentStep(8)}
+                  className="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl transition disabled:opacity-40 text-xs cursor-pointer flex items-center justify-center gap-2"
+                >
+                  Continuer vers la vidéo <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ÉTAPE 8 : Vidéo produit (NOUVEAU, optionnelle, 30s max, toujours liée à ce produit) */}
+          {currentStep === 8 && (
+            <motion.div 
+              key="step8"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="text-center space-y-6"
+            >
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight">
+                Ajoutez une courte vidéo (optionnel)
+              </h1>
+              <p className={`text-[11px] flex items-center justify-center gap-1.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                <Clock className="w-3 h-3" /> {MAX_VIDEO_SECONDS} secondes maximum · sera automatiquement liée à cette annonce
+              </p>
+
+              <div className="space-y-4">
+                {videoPreview ? (
+                  <div className="relative mx-auto w-40 aspect-[9/16] rounded-2xl overflow-hidden border border-slate-700 bg-black">
+                    <video src={videoPreview} controls className="w-full h-full object-cover" />
+                    <button onClick={removeVideo} className="absolute top-1.5 right-1.5 bg-red-600 text-white p-1 rounded-full">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className={`mx-auto w-40 aspect-[9/16] border border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition gap-2 ${
+                    isDarkMode ? 'border-slate-700 text-slate-400 hover:border-orange-600' : 'border-slate-400 text-slate-600 hover:border-orange-700'
+                  }`}>
+                    {checkingVideo ? (
+                      <div className="w-5 h-5 border-2 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <PlayCircle className="w-6 h-6 text-orange-600" />
+                        <span className="text-[10px]">Ajouter une vidéo</span>
+                      </>
+                    )}
+                    <input ref={videoInputRef} type="file" accept="video/*" onChange={handleVideoChange} className="hidden" disabled={checkingVideo} />
+                  </label>
+                )}
+
+                {videoError && (
+                  <p className="text-[11px] text-red-500 font-medium flex items-center justify-center gap-1">
+                    <AlertCircle className="w-3 h-3 flex-shrink-0" /> {videoError}
+                  </p>
+                )}
+
+                <button
+                  disabled={loading}
                   onClick={handleSubmit}
-                  className="w-full bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-extrabold py-3.5 rounded-2xl transition disabled:opacity-40 text-xs cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full bg-gradient-to-r from-orange-700 to-amber-700 hover:from-orange-600 hover:to-amber-600 text-white font-extrabold py-3.5 rounded-2xl transition disabled:opacity-40 text-xs cursor-pointer flex items-center justify-center gap-2"
                 >
                   {loading ? (
                     <>
@@ -540,9 +698,21 @@ export default function CreateProduct() {
                       <span>Publication en cours...</span>
                     </>
                   ) : (
-                    'Publier maintenant'
+                    <>
+                      <Video className="w-4 h-4" />
+                      Publier maintenant
+                    </>
                   )}
                 </button>
+
+                {!videoFile && !loading && (
+                  <button
+                    onClick={handleSubmit}
+                    className={`w-full flex items-center justify-center gap-1.5 text-[11px] font-semibold py-2 transition ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                  >
+                    Passer cette étape <SkipForward className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </motion.div>
           )}
@@ -551,7 +721,7 @@ export default function CreateProduct() {
 
       {/* Indicateur d'étape minimaliste en bas */}
       <div className={`text-[10px] font-bold tracking-widest uppercase ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-        Étape {currentStep} sur {postType === 'SALE' ? 7 : 6}
+        Étape {currentStep} sur {totalSteps}
       </div>
     </div>
   );
