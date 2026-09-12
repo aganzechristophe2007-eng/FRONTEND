@@ -1038,8 +1038,8 @@ export default function Home() {
                   </a>
                 </li>
                 <li>
-                  <a href="tel:+243000000000" className="hover:text-orange-500 transition flex items-center gap-1.5">
-                    <Phone className="w-3 h-3" /> +243 000 000 000
+                  <a href="tel:+243971658685" className="hover:text-orange-500 transition flex items-center gap-1.5">
+                    <Phone className="w-3 h-3" /> +243 971 658 685
                   </a>
                 </li>
               </ul>

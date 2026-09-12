@@ -113,7 +113,6 @@ export default function ProductDetails() {
         setProduct(p);
       })
       .catch(() => {
-        // Repli : si l'endpoint direct échoue, on cherche dans la liste globale
         apiFetch('/products')
           .then((data) => {
             const list = Array.isArray(data) ? data : (data.data || []);
@@ -129,7 +128,6 @@ export default function ProductDetails() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  // Produits similaires : même catégorie, produit courant exclu
   useEffect(() => {
     if (!product) return;
 
@@ -189,9 +187,7 @@ export default function ProductDetails() {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }
-    } catch {
-      // annulé par l'utilisateur
-    }
+    } catch {}
   };
 
   const getInitials = (name?: string) => {
@@ -247,8 +243,6 @@ export default function ProductDetails() {
 
   return (
     <div className={`min-h-screen flex flex-col pb-10 transition-colors duration-300 ${darkMode ? 'bg-neutral-950 text-white' : 'bg-neutral-50 text-neutral-900'}`}>
-
-      {/* HEADER */}
       <header className={`sticky top-0 z-40 border-b px-4 sm:px-8 py-3 transition-colors ${
         darkMode ? 'bg-neutral-900/95 border-neutral-800 backdrop-blur-md' : 'bg-white/95 border-neutral-200 backdrop-blur-md'
       }`}>
@@ -288,7 +282,6 @@ export default function ProductDetails() {
         </div>
       </header>
 
-      {/* Fil d'ariane simple */}
       <div className="max-w-6xl mx-auto w-full px-3 sm:px-6 pt-4 text-[11px] text-neutral-500 flex items-center gap-1.5">
         <Link to="/" className="hover:text-orange-500 transition">Accueil</Link>
         <span>/</span>
@@ -297,14 +290,10 @@ export default function ProductDetails() {
         <span className={darkMode ? 'text-neutral-300' : 'text-neutral-700'}>{prodCategory}</span>
       </div>
 
-      {/* BLOC PRINCIPAL PRODUIT */}
       <main className="flex-1 max-w-6xl mx-auto w-full px-3 sm:px-6 py-6">
         <div className={`rounded-2xl border p-4 sm:p-6 ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10">
-
-            {/* GALERIE : miniatures + image principale, comme la capture */}
             <div className="flex flex-col sm:flex-row gap-3">
-              {/* Miniatures (verticales sur desktop, horizontales sur mobile) */}
               {imagesList.length > 1 && (
                 <div className="flex sm:flex-col gap-2 order-2 sm:order-1 overflow-x-auto sm:overflow-visible">
                   {imagesList.map((img, idx) => (
@@ -321,7 +310,6 @@ export default function ProductDetails() {
                 </div>
               )}
 
-              {/* Image principale */}
               <div className={`relative aspect-square w-full overflow-hidden rounded-2xl border order-1 sm:order-2 flex-1 cursor-zoom-in ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-50 border-neutral-200'}`}>
                 {imagesList.length > 0 ? (
                   <img
@@ -370,7 +358,6 @@ export default function ProductDetails() {
               </div>
             </div>
 
-            {/* INFOS PRODUIT */}
             <div className="flex flex-col gap-5">
               <div>
                 <div className="flex items-center gap-2 mb-2">
@@ -392,7 +379,6 @@ export default function ProductDetails() {
                 </div>
               </div>
 
-              {/* PRIX */}
               <div>
                 <span className="text-[10px] uppercase font-bold tracking-widest text-neutral-500">
                   {isRequest ? 'Budget estimé' : 'Prix unitaire'}
@@ -407,7 +393,6 @@ export default function ProductDetails() {
                 )}
               </div>
 
-              {/* Quantité disponible + sélecteur (si vente) */}
               {!isRequest && (
                 <div className={`rounded-2xl border p-4 flex items-center justify-between ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-50 border-neutral-200'}`}>
                   <div className="flex items-center gap-2">
@@ -438,7 +423,6 @@ export default function ProductDetails() {
                 </div>
               )}
 
-              {/* VENDEUR */}
               <div className={`rounded-2xl border p-4 ${darkMode ? 'bg-neutral-950 border-neutral-800' : 'bg-neutral-50 border-neutral-200'}`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -460,7 +444,6 @@ export default function ProductDetails() {
                 </div>
               </div>
 
-              {/* ACTIONS */}
               {!isOwner ? (
                 <div className="flex flex-col sm:flex-row gap-3">
                   <button
@@ -495,7 +478,6 @@ export default function ProductDetails() {
             </div>
           </div>
 
-          {/* ONGLETS : Description / Détails (comme la capture, sans avis puisque pas de système de reviews) */}
           <div className="mt-8 border-t pt-6 border-neutral-800/60">
             <div className="flex items-center gap-6 border-b border-neutral-800/60 mb-4">
               <button
@@ -580,7 +562,6 @@ export default function ProductDetails() {
           </div>
         </div>
 
-        {/* PRODUITS SIMILAIRES (même catégorie) */}
         {!loadingSimilar && similarProducts.length > 0 && (
           <div className="mt-10">
             <div className="flex items-center gap-2 mb-4">
@@ -627,7 +608,6 @@ export default function ProductDetails() {
         )}
       </main>
 
-      {/* LIGHTBOX PLEIN ÉCRAN */}
       <AnimatePresence>
         {showFullImage && imagesList.length > 0 && (
           <motion.div
