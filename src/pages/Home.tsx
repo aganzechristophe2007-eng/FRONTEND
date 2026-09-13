@@ -1000,18 +1000,10 @@ export default function Home() {
         </div>
       </header>
 
-      {/* BARRE D'ONGLETS MOBILE EN BAS (fixe à l'écran, indépendante du footer) */}
+{/* BARRE D'ONGLETS MOBILE (Sans Accueil, Poster parfaitement centré) */}
       <div className={`sm:hidden fixed bottom-0 left-0 right-0 z-50 border-t flex items-center justify-around py-2 px-1 backdrop-blur-md transition-colors ${
         darkMode ? 'bg-neutral-900/95 border-neutral-800 text-neutral-400' : 'bg-white/95 border-neutral-200 text-neutral-600'
       }`}>
-        <Link 
-          to="/" 
-          className={`flex flex-col items-center justify-center flex-1 py-1 transition ${location.pathname === '/' ? 'text-orange-600 font-bold' : 'hover:text-orange-600'}`}
-        >
-          <HomeIcon className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px]">Accueil</span>
-        </Link>
-
         <button 
           onClick={() => handleProtectedAction('/orders')}
           className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/orders') ? 'text-orange-600 font-bold' : 'hover:text-orange-600'}`}
@@ -1019,7 +1011,7 @@ export default function Home() {
           <Package className="w-5 h-5 mb-0.5" />
           <span className="text-[10px]">Commandes</span>
           {ordersCount > 0 && (
-            <span className="absolute top-0 right-4 bg-orange-700 text-white text-[9px] font-bold px-1 rounded-full">
+            <span className="absolute top-0 right-3 bg-orange-700 text-white text-[9px] font-bold px-1 rounded-full">
               {ordersCount}
             </span>
           )}
@@ -1033,6 +1025,7 @@ export default function Home() {
           <span className="text-[10px]">Boutique</span>
         </Link>
 
+        {/* Bouton Poster centralisé au milieu */}
         <div className="flex flex-col items-center justify-center flex-1 -mt-4">
           <button 
             onClick={() => handleProtectedAction('/create-product')}
@@ -1051,7 +1044,7 @@ export default function Home() {
           <MessageSquare className="w-5 h-5 mb-0.5" />
           <span className="text-[10px]">Messages</span>
           {unreadMessagesCount > 0 && (
-            <span className="absolute top-0 right-3 bg-red-600 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
+            <span className="absolute top-0 right-2 bg-red-600 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
               {unreadMessagesCount}
             </span>
           )}

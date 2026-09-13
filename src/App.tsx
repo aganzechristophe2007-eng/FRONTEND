@@ -11,7 +11,6 @@ import Login from './pages/Login';
 import Register from './pages/register';
 import CreateProduct from './pages/CreateProduct';
 import Orders from './pages/Orders';
-import FeedbackButton from './components/FeedbackButton';
 import MessagingPage from "./pages/Messages";
 import Notifications from './pages/Notifications';
 import FullUserWallet from './pages/UserWallet';
@@ -21,6 +20,9 @@ import AdminSellerDashboard from './pages/AdminSellerDashboard';
 import AdminFinancesDashboard from './pages/AdminFinancesDashboard';
 import LegalPage from './pages/LegalPage';
 import ProtectedRoute from './components/ProtectedRoute';
+
+// --- Utilisation du fichier Boutique.tsx existant ---
+import Boutique from './pages/Boutique';
 
 export default function App() {
   return (
@@ -43,7 +45,11 @@ export default function App() {
           <Route path="/notifications" element={<Notifications isLightMode={false} />} />
           <Route path="/wallet" element={<FullUserWallet />} />
 
-          {/* Pages légales (CGU, Confidentialité, Cookies, Mentions légales, Règles communauté) */}
+          {/* Route vers la page Boutique existante */}
+          <Route path="/boutique" element={<Boutique />} />
+          <Route path="/shops/:slug" element={<Boutique />} />
+
+          {/* Pages légales */}
           <Route path="/legal/:slug" element={<LegalPage />} />
 
           {/* Routes Administration & Finances protégées */}
@@ -76,7 +82,6 @@ export default function App() {
           <Route path="*" element={<Home />} />
         </Routes>
 
-        {/* Monté en permanence, visible sur toutes les pages */}
         <IncomingCallModal />
       </SocketProvider>
     </Router>
