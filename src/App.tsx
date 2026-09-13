@@ -24,6 +24,9 @@ import ProtectedRoute from './components/ProtectedRoute';
 // --- Utilisation du fichier Boutique.tsx existant ---
 import Boutique from './pages/Boutique';
 
+// --- NOUVEAU : page des produits officiels CBF (revente avec commission) ---
+import NosProduits from './pages/Nosproduits';
+
 export default function App() {
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -49,6 +52,9 @@ export default function App() {
           <Route path="/boutique" element={<Boutique />} />
           <Route path="/shops/:slug" element={<Boutique />} />
 
+          {/* Produits officiels CBF — revente avec commission (distincte de /boutique) */}
+          <Route path="/nos-produits" element={<NosProduits />} />
+
           {/* Pages légales */}
           <Route path="/legal/:slug" element={<LegalPage />} />
 
@@ -64,7 +70,7 @@ export default function App() {
           <Route 
             path="/admin/seller-dashboard" 
             element={
-              <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN', 'ADMIN_SELLER']}>
+              <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']}>
                 <AdminSellerDashboard />
               </ProtectedRoute>
             } 

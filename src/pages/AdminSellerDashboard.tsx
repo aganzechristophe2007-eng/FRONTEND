@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Package, CheckCircle, Clock, Truck, AlertCircle, ArrowLeft, LogOut, Send, Inbox, UserCheck, Eye } from 'lucide-react';
+import { Package, CheckCircle, Clock, Truck, AlertCircle, ArrowLeft, LogOut, Send, Inbox, UserCheck, Eye, PlusCircle, Upload, Percent } from 'lucide-react';
 
 interface OrderItem {
   id: string;
@@ -60,6 +60,11 @@ interface ContactUser {
   role?: string;
 }
 
+interface Category {
+  id: string;
+  name: string;
+}
+
 export default function AdminSellerDashboard() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -69,9 +74,26 @@ export default function AdminSellerDashboard() {
   const [successMessage, setSuccessMessage] = useState('');
   const [sellerName, setSellerName] = useState('Gestionnaire');
   const [currentUserId, setCurrentUserId] = useState('');
+  const [currentUserRole, setCurrentUserRole] = useState('');
   
-  const [activeTab, setActiveTab] = useState<'orders' | 'products' | 'dm'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'products' | 'dm' | 'publish'>('orders');
   const [hasNewMessage, setHasNewMessage] = useState(false);
+
+  // --- NOUVEAU : publication d'un produit officiel CBF (visible sur /nos-produits) ---
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [publishForm, setPublishForm] = useState({
+    title: '',
+    description: '',
+    categoryId: '',
+    state: 'NEW',
+    priceUSD: '',
+    priceCDF: '',
+    quantity: '1',
+  });
+  const [publishImages, setPublishImages] = useState<File[]>([]);
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [publishError, setPublishError] = useState('');
+  const [publishSuccess, setPublishSuccess] = useState('');
   
   const [contacts, setContacts] = useState<ContactUser[]>([]);
   const [selectedContact, setSelectedContact] = useState<ContactUser | null>(null);
@@ -93,12 +115,25 @@ export default function AdminSellerDashboard() {
       const user = JSON.parse(userStr);
       if (user.id) setCurrentUserId(user.id);
       if (user.name) setSellerName(user.name);
+      if (user.role) setCurrentUserRole(user.role);
     } catch {
       // Ignorer l'erreur de parsing
     }
 
     fetchInitialData(token);
+    fetchCategories();
   }, [navigate]);
+
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('https://cbfsoko-backend.onrender.com/api/categories');
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : (data.data || data.categories || []);
+      setCategories(list);
+    } catch {
+      setCategories([]);
+    }
+  };
 
   useEffect(() => {
     if (!selectedContact?.id) return;
@@ -348,10 +383,65 @@ export default function AdminSellerDashboard() {
     }
   };
 
-  const handleTabChange = (tab: 'orders' | 'products' | 'dm') => {
+  const handleTabChange = (tab: 'orders' | 'products' | 'dm' | 'publish') => {
     setActiveTab(tab);
     if (tab === 'dm') {
       setHasNewMessage(false);
+    }
+  };
+
+  const isAdminUser = currentUserRole === 'ADMIN' || currentUserRole === 'SUPER_ADMIN';
+
+  const handlePublishImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setPublishImages(Array.from(e.target.files).slice(0, 5));
+    }
+  };
+
+  const handlePublishProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPublishError('');
+    setPublishSuccess('');
+
+    if (!publishForm.title || !publishForm.description || !publishForm.categoryId) {
+      setPublishError('Veuillez remplir le titre, la description et la catégorie.');
+      return;
+    }
+
+    setPublishLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      formData.append('title', publishForm.title);
+      formData.append('description', publishForm.description);
+      formData.append('categoryId', publishForm.categoryId);
+      formData.append('state', publishForm.state);
+      formData.append('priceUSD', publishForm.priceUSD || '0');
+      formData.append('priceCDF', publishForm.priceCDF || '0');
+      formData.append('quantity', publishForm.quantity || '1');
+      formData.append('type', 'SALE');
+      formData.append('isOfficial', 'true'); // Marque le produit comme officiel CBF (page "Nos produits")
+      publishImages.forEach((file) => formData.append('images', file));
+
+      const response = await fetch('https://cbfsoko-backend.onrender.com/api/products', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setPublishSuccess('Produit officiel publié avec succès ! Il apparaît maintenant sur la page "Nos produits".');
+        setPublishForm({ title: '', description: '', categoryId: '', state: 'NEW', priceUSD: '', priceCDF: '', quantity: '1' });
+        setPublishImages([]);
+        if (token) fetchProductsAndSales(token);
+      } else {
+        setPublishError(data.message || "Impossible de publier le produit.");
+      }
+    } catch (err: any) {
+      setPublishError(err.message || 'Erreur réseau lors de la publication.');
+    } finally {
+      setPublishLoading(false);
     }
   };
 
@@ -446,6 +536,16 @@ export default function AdminSellerDashboard() {
                 <span className="w-2 h-2 rounded-full bg-red-500 absolute top-2.5 right-2.5" />
               )}
             </button>
+            {isAdminUser && (
+              <button
+                onClick={() => handleTabChange('publish')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  activeTab === 'publish' ? 'bg-orange-600 text-white shadow-md shadow-orange-600/30' : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <PlusCircle className="w-4 h-4" /> Publier officiel
+              </button>
+            )}
           </div>
         </div>
 
@@ -681,6 +781,134 @@ export default function AdminSellerDashboard() {
                   className="bg-orange-600 hover:bg-orange-500 text-white px-5 py-3 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2 shadow-lg shadow-orange-600/30 disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" /> Envoyer
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'publish' && isAdminUser && (
+          <div className="max-w-2xl">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
+              <div className="flex items-center gap-2 mb-1">
+                <Percent className="w-4 h-4 text-orange-500" />
+                <h3 className="text-sm font-bold text-white">Publier un produit officiel CBF</h3>
+              </div>
+              <p className="text-[11px] text-neutral-400 mb-5">
+                Ce produit apparaîtra sur la page publique "Nos produits" et pourra être revendu par les utilisateurs contre une commission fixe de 10%.
+              </p>
+
+              {publishSuccess && (
+                <div className="mb-4 p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-xs flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 flex-shrink-0" /> {publishSuccess}
+                </div>
+              )}
+              {publishError && (
+                <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" /> {publishError}
+                </div>
+              )}
+
+              <form onSubmit={handlePublishProduct} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Titre du produit</label>
+                  <input
+                    type="text"
+                    value={publishForm.title}
+                    onChange={(e) => setPublishForm({ ...publishForm, title: e.target.value })}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-white outline-none focus:border-orange-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Description</label>
+                  <textarea
+                    value={publishForm.description}
+                    onChange={(e) => setPublishForm({ ...publishForm, description: e.target.value })}
+                    rows={3}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-white outline-none focus:border-orange-500"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Catégorie</label>
+                    <select
+                      value={publishForm.categoryId}
+                      onChange={(e) => setPublishForm({ ...publishForm, categoryId: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-white outline-none focus:border-orange-500"
+                      required
+                    >
+                      <option value="">Sélectionner...</option>
+                      {categories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-neutral-400 mb-1">État</label>
+                    <select
+                      value={publishForm.state}
+                      onChange={(e) => setPublishForm({ ...publishForm, state: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-white outline-none focus:border-orange-500"
+                    >
+                      <option value="NEW">Neuf</option>
+                      <option value="LIKE_NEW">Comme neuf</option>
+                      <option value="GOOD">Bon état</option>
+                      <option value="ACCEPTABLE">Acceptable</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Prix (USD)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={publishForm.priceUSD}
+                      onChange={(e) => setPublishForm({ ...publishForm, priceUSD: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-white outline-none focus:border-orange-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Prix (CDF)</label>
+                    <input
+                      type="number"
+                      value={publishForm.priceCDF}
+                      onChange={(e) => setPublishForm({ ...publishForm, priceCDF: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-white outline-none focus:border-orange-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Quantité</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={publishForm.quantity}
+                      onChange={(e) => setPublishForm({ ...publishForm, quantity: e.target.value })}
+                      className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-white outline-none focus:border-orange-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-semibold text-neutral-400 mb-1">Photos (max 5)</label>
+                  <label className="flex items-center gap-2 justify-center border border-dashed border-neutral-700 rounded-xl p-4 cursor-pointer hover:border-orange-500 transition text-neutral-400 text-xs">
+                    <Upload className="w-4 h-4" />
+                    {publishImages.length > 0 ? `${publishImages.length} fichier(s) sélectionné(s)` : 'Choisir des images'}
+                    <input type="file" accept="image/*" multiple onChange={handlePublishImagesChange} className="hidden" />
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={publishLoading}
+                  className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-bold text-xs py-3 rounded-xl transition flex items-center justify-center gap-2"
+                >
+                  {publishLoading ? 'Publication en cours...' : <><PlusCircle className="w-4 h-4" /> Publier le produit officiel</>}
                 </button>
               </form>
             </div>

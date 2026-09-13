@@ -1208,7 +1208,7 @@ export default function Home() {
               </div>
             </div>
             <Link
-              to="/boutique"
+              to="/nos-produits"
               className="bg-orange-700 hover:bg-orange-800 text-white font-bold text-xs px-5 py-2.5 rounded-full transition flex items-center gap-1.5 flex-shrink-0"
             >
               Nos produits <ChevronDown className="w-3.5 h-3.5 -rotate-90" />

@@ -27,6 +27,12 @@ const SocketContext = createContext<SocketContextType>({
 
 export const useSocket = () => useContext(SocketContext);
 
+// Le serveur Socket.io écoute sur la racine (ex: https://cbfsoko-backend.onrender.com),
+// jamais sur /api — on retire donc ce suffixe s'il est présent dans VITE_API_URL,
+// et on retombe sur l'URL de production (pas localhost) si la variable n'est pas définie.
+const RAW_API_URL = import.meta.env.VITE_API_URL || 'https://cbfsoko-backend.onrender.com/api';
+const SOCKET_URL = RAW_API_URL.replace(/\/api\/?$/, '');
+
 export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth(); // doit retourner user.id une fois connecté
   const socketRef = useRef<Socket | null>(null);
@@ -38,9 +44,9 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
     if (!user?.id) return;
 
     // Connexion unique au serveur socket
- const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
-  transports: ['websocket'],
-});
+    const socket = io(SOCKET_URL, {
+      transports: ['websocket'],
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {

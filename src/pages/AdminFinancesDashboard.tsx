@@ -1,6 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { DollarSign, MessageSquare, CheckCircle, AlertCircle, ArrowLeft, LogOut, ShieldCheck, Send } from 'lucide-react';
+import { DollarSign, MessageSquare, CheckCircle, AlertCircle, ArrowLeft, LogOut, ShieldCheck, Send, Wallet, TrendingUp, Users, Activity } from 'lucide-react';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
 interface Order {
   id: string;
@@ -31,6 +45,37 @@ interface Message {
   };
 }
 
+interface UserWalletRow {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  balanceUSD: number;
+  balanceCDF: number;
+}
+
+interface GlobalTransaction {
+  id: string;
+  type: string;
+  status: string;
+  provider?: string;
+  amountUSD: number;
+  amountCDF: number;
+  createdAt: string;
+  user?: { name: string; email: string; role: string } | null;
+}
+
+interface FinanceStats {
+  totalCirculatingUSD: number;
+  totalCirculatingCDF: number;
+  totalDeposits: number;
+  totalWithdrawals: number;
+  platformEarnings: number;
+  failureRate: number;
+  totalUsers: number;
+  chartData: { date: string; depots: number; retraits: number }[];
+}
+
 export default function AdminFinancesDashboard() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -41,10 +86,16 @@ export default function AdminFinancesDashboard() {
   const [currentUserId, setCurrentUserId] = useState('');
   const [logisticsAdminId, setLogisticsAdminId] = useState('');
   
-  const [activeTab, setActiveTab] = useState<'orders' | 'chat'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'chat' | 'wallets'>('orders');
   const [hasNewMessage, setHasNewMessage] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
+
+  // --- NOUVEAU : vue d'ensemble des portefeuilles / transactions / circulation d'argent ---
+  const [walletRows, setWalletRows] = useState<UserWalletRow[]>([]);
+  const [globalTransactions, setGlobalTransactions] = useState<GlobalTransaction[]>([]);
+  const [financeStats, setFinanceStats] = useState<FinanceStats | null>(null);
+  const [financeLoading, setFinanceLoading] = useState(true);
 
   const API_URL = 'https://cbfsoko-backend.onrender.com/api';
 
@@ -67,7 +118,32 @@ export default function AdminFinancesDashboard() {
 
     fetchAllOrders(token);
     fetchLogisticsAdmin(token);
+    fetchFinanceOverview(token);
   }, [navigate]);
+
+  const fetchFinanceOverview = async (token: string) => {
+    setFinanceLoading(true);
+    try {
+      const [walletsRes, txRes, statsRes] = await Promise.all([
+        fetch(`${API_URL}/admin/wallets`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_URL}/admin/transactions`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API_URL}/admin/finance-stats`, { headers: { 'Authorization': `Bearer ${token}` } }),
+      ]);
+
+      const walletsData = await walletsRes.json();
+      if (walletsData.success) setWalletRows(walletsData.data);
+
+      const txData = await txRes.json();
+      if (txData.success) setGlobalTransactions(txData.data);
+
+      const statsData = await statsRes.json();
+      if (statsData.success) setFinanceStats(statsData.data);
+    } catch (err) {
+      console.error('Erreur chargement des données financières globales', err);
+    } finally {
+      setFinanceLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!logisticsAdminId) return;
@@ -210,7 +286,7 @@ export default function AdminFinancesDashboard() {
     }
   };
 
-  const handleTabChange = (tab: 'orders' | 'chat') => {
+  const handleTabChange = (tab: 'orders' | 'chat' | 'wallets') => {
     setActiveTab(tab);
     if (tab === 'chat') {
       setHasNewMessage(false);
@@ -299,6 +375,14 @@ export default function AdminFinancesDashboard() {
               {hasNewMessage && (
                 <span className="w-2 h-2 rounded-full bg-red-500 absolute top-2.5 right-2.5" />
               )}
+            </button>
+            <button
+              onClick={() => handleTabChange('wallets')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                activeTab === 'wallets' ? 'bg-orange-600 text-white shadow-md shadow-orange-600/30' : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              <Wallet className="w-4 h-4" /> Portefeuilles
             </button>
           </div>
         </div>
@@ -451,6 +535,163 @@ export default function AdminFinancesDashboard() {
                 <Send className="w-4 h-4" /> Envoyer
               </button>
             </form>
+          </div>
+        )}
+
+        {activeTab === 'wallets' && (
+          <div>
+            {financeLoading ? (
+              <div className="flex items-center justify-center py-24 text-orange-500 text-xs font-semibold gap-2">
+                <span className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                Chargement des données financières...
+              </div>
+            ) : (
+              <>
+                {/* Cartes résumé */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4">
+                    <span className="text-[10px] text-neutral-500 flex items-center gap-1"><Activity className="w-3 h-3" /> Circulation (USD)</span>
+                    <p className="text-base font-black text-orange-500 mt-1">{financeStats?.totalCirculatingUSD.toFixed(2) || '0'} $</p>
+                    <span className="text-[10px] text-neutral-500">{financeStats?.totalCirculatingCDF.toLocaleString() || 0} CDF</span>
+                  </div>
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4">
+                    <span className="text-[10px] text-neutral-500 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Total dépôts</span>
+                    <p className="text-base font-black text-emerald-400 mt-1">{financeStats?.totalDeposits.toFixed(2) || '0'} $</p>
+                  </div>
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4">
+                    <span className="text-[10px] text-neutral-500 flex items-center gap-1"><TrendingUp className="w-3 h-3 rotate-180" /> Total retraits</span>
+                    <p className="text-base font-black text-rose-400 mt-1">{financeStats?.totalWithdrawals.toFixed(2) || '0'} $</p>
+                  </div>
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4">
+                    <span className="text-[10px] text-neutral-500 flex items-center gap-1"><DollarSign className="w-3 h-3" /> Gains plateforme</span>
+                    <p className="text-base font-black text-orange-400 mt-1">{financeStats?.platformEarnings.toFixed(2) || '0'} $</p>
+                  </div>
+                </div>
+
+                {/* Graphique circulation */}
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 mb-6">
+                  <h3 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-orange-500" /> Circulation de l'argent (30 derniers jours)
+                  </h3>
+                  {financeStats && financeStats.chartData.length > 0 ? (
+                    <Line
+                      data={{
+                        labels: financeStats.chartData.map((d) => d.date),
+                        datasets: [
+                          {
+                            label: 'Dépôts',
+                            data: financeStats.chartData.map((d) => d.depots),
+                            borderColor: '#34d399',
+                            backgroundColor: 'rgba(52,211,153,0.15)',
+                            tension: 0.3,
+                            fill: true,
+                          },
+                          {
+                            label: 'Retraits',
+                            data: financeStats.chartData.map((d) => d.retraits),
+                            borderColor: '#fb7185',
+                            backgroundColor: 'rgba(251,113,133,0.15)',
+                            tension: 0.3,
+                            fill: true,
+                          },
+                        ],
+                      }}
+                      options={{
+                        responsive: true,
+                        plugins: { legend: { labels: { color: '#a3a3a3', font: { size: 10 } } } },
+                        scales: {
+                          x: { ticks: { color: '#737373', font: { size: 9 } }, grid: { display: false } },
+                          y: { ticks: { color: '#737373', font: { size: 9 } }, grid: { color: '#262626' } },
+                        },
+                      }}
+                      height={90}
+                    />
+                  ) : (
+                    <p className="text-neutral-500 text-xs text-center py-8">Aucune donnée sur la période.</p>
+                  )}
+                </div>
+
+                {/* Portefeuilles des utilisateurs */}
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 mb-6">
+                  <h3 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-orange-500" /> Portefeuilles des utilisateurs ({walletRows.length})
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[11px]">
+                      <thead>
+                        <tr className="text-neutral-500 border-b border-neutral-800">
+                          <th className="text-left py-2 pr-3 font-semibold">Utilisateur</th>
+                          <th className="text-left py-2 pr-3 font-semibold">Rôle</th>
+                          <th className="text-right py-2 pr-3 font-semibold">Solde USD</th>
+                          <th className="text-right py-2 font-semibold">Solde CDF</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {walletRows.length === 0 ? (
+                          <tr><td colSpan={4} className="text-center text-neutral-500 py-6">Aucun utilisateur trouvé.</td></tr>
+                        ) : (
+                          walletRows.map((u) => (
+                            <tr key={u.id} className="border-b border-neutral-800/60">
+                              <td className="py-2 pr-3">
+                                <span className="font-semibold text-white block">{u.name}</span>
+                                <span className="text-neutral-500 block">{u.email}</span>
+                              </td>
+                              <td className="py-2 pr-3 text-neutral-400">{u.role}</td>
+                              <td className="py-2 pr-3 text-right font-bold text-orange-500">{u.balanceUSD.toFixed(2)} $</td>
+                              <td className="py-2 text-right text-neutral-300">{u.balanceCDF.toLocaleString()} CDF</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Toutes les transactions */}
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+                  <h3 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-orange-500" /> Transactions de tous les utilisateurs ({globalTransactions.length})
+                  </h3>
+                  <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                    <table className="w-full text-[11px]">
+                      <thead className="sticky top-0 bg-neutral-900">
+                        <tr className="text-neutral-500 border-b border-neutral-800">
+                          <th className="text-left py-2 pr-3 font-semibold">Utilisateur</th>
+                          <th className="text-left py-2 pr-3 font-semibold">Type</th>
+                          <th className="text-left py-2 pr-3 font-semibold">Statut</th>
+                          <th className="text-right py-2 pr-3 font-semibold">Montant</th>
+                          <th className="text-right py-2 font-semibold">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {globalTransactions.length === 0 ? (
+                          <tr><td colSpan={5} className="text-center text-neutral-500 py-6">Aucune transaction enregistrée.</td></tr>
+                        ) : (
+                          globalTransactions.map((t) => (
+                            <tr key={t.id} className="border-b border-neutral-800/60">
+                              <td className="py-2 pr-3">
+                                <span className="font-semibold text-white block">{t.user?.name || 'Inconnu'}</span>
+                                <span className="text-neutral-500 block">{t.user?.email}</span>
+                              </td>
+                              <td className="py-2 pr-3">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${t.type === 'DEPOSIT' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                  {t.type}
+                                </span>
+                              </td>
+                              <td className="py-2 pr-3 text-neutral-400">{t.status}</td>
+                              <td className="py-2 pr-3 text-right font-bold text-orange-500">
+                                {t.amountUSD > 0 ? `${t.amountUSD.toFixed(2)} $` : `${t.amountCDF.toLocaleString()} CDF`}
+                              </td>
+                              <td className="py-2 text-right text-neutral-500">{new Date(t.createdAt).toLocaleDateString()}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
