@@ -146,6 +146,7 @@ export default function Home() {
 
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [followLoadingId, setFollowLoadingId] = useState<string | null>(null);
+  const [followError, setFollowError] = useState<string | null>(null);
 
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
@@ -442,6 +443,7 @@ export default function Home() {
     if (!token) { navigate('/login?redirect=/'); return; }
     const isFollowing = followingIds.has(sellerId);
     setFollowLoadingId(sellerId);
+    setFollowError(null);
     setFollowingIds(prev => {
       const next = new Set(prev);
       if (isFollowing) next.delete(sellerId); else next.add(sellerId);
@@ -457,6 +459,7 @@ export default function Home() {
         return next;
       });
       console.error("Erreur follow/unfollow", err);
+      setFollowError("Action impossible pour le moment, réessayez.");
     } finally {
       setFollowLoadingId(null);
     }
@@ -1022,6 +1025,14 @@ export default function Home() {
           )}
         </button>
 
+        <Link
+          to="/boutique"
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition ${location.pathname.includes('/boutique') ? 'text-orange-600 font-bold' : 'hover:text-orange-600'}`}
+        >
+          <Store className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Boutique</span>
+        </Link>
+
         <div className="flex flex-col items-center justify-center flex-1 -mt-4">
           <button 
             onClick={() => handleProtectedAction('/create-product')}
@@ -1128,58 +1139,88 @@ export default function Home() {
             <div className={`text-center py-6 text-[11px] rounded-xl border ${darkMode ? 'text-neutral-500 border-neutral-800 bg-neutral-900/30' : 'text-neutral-500 border-neutral-200 bg-white'}`}>
               Connectez-vous pour suivre vos vendeurs préférés et voir leurs nouveautés ici.
             </div>
-          ) : followedFeed.length > 0 ? (
-            <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
-              {followedFeed.map((product) => {
-                const productId = product.id || product._id;
-                const sellerId = product.sellerId || product.userId || product.seller?.id || product.seller?._id;
-                return (
-                  <div key={productId} className={`w-[130px] sm:w-[170px] flex-shrink-0 rounded-xl overflow-hidden border snap-start ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
-                    <div className="aspect-square w-full cursor-pointer" onClick={() => goToProductDetails(productId)}>
-                      <img src={getImageUrl(product.images?.[0])} alt={product.title} className="w-full h-full object-cover" />
-                    </div>
-                    <div className="p-2">
-                      <p className="text-[10px] font-bold truncate">{product.title}</p>
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="text-[10px] text-neutral-400 truncate max-w-[70px]">{product.seller?.name || 'Vendeur'}</span>
-                        <button
-                          type="button"
-                          disabled={followLoadingId === sellerId}
-                          onClick={() => toggleFollow(sellerId)}
-                          className="text-orange-600 flex-shrink-0"
-                          title="Se désabonner"
-                        >
-                          <UserCheck className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           ) : (
-            <div>
-              <p className={`text-[11px] mb-3 ${darkMode ? 'text-neutral-500' : 'text-neutral-500'}`}>Vous ne suivez encore aucun vendeur. Découvrez-en quelques-uns :</p>
-              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                {suggestedSellers.map((seller) => (
-                  <button
-                    key={seller.id}
-                    type="button"
-                    disabled={followLoadingId === seller.id}
-                    onClick={() => toggleFollow(seller.id)}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-full border text-[11px] font-bold flex-shrink-0 transition ${darkMode ? 'bg-neutral-900 border-neutral-800 hover:border-orange-600' : 'bg-white border-neutral-200 hover:border-orange-600'}`}
-                  >
-                    <span className="w-5 h-5 rounded-full bg-orange-700 text-white flex items-center justify-center text-[9px] font-black">{getInitials(seller.name)}</span>
-                    <span className="truncate max-w-[80px]">{seller.name}</span>
-                    <UserPlus className="w-3.5 h-3.5 text-orange-600" />
-                  </button>
-                ))}
-                {suggestedSellers.length === 0 && (
-                  <span className="text-[11px] text-neutral-500">Aucun vendeur disponible pour le moment.</span>
-                )}
+            <>
+              {followError && <p className="text-red-500 text-[10px] mb-2">{followError}</p>}
+
+              {followedFeed.length > 0 && (
+                <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide mb-4">
+                  {followedFeed.map((product) => {
+                    const productId = product.id || product._id;
+                    const sellerId = product.sellerId || product.userId || product.seller?.id || product.seller?._id;
+                    return (
+                      <div key={productId} className={`w-[130px] sm:w-[170px] flex-shrink-0 rounded-xl overflow-hidden border snap-start ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+                        <div className="aspect-square w-full cursor-pointer" onClick={() => goToProductDetails(productId)}>
+                          <img src={getImageUrl(product.images?.[0])} alt={product.title} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="p-2">
+                          <p className="text-[10px] font-bold truncate">{product.title}</p>
+                          <div className="flex items-center justify-between mt-1">
+                            <span className="text-[10px] text-neutral-400 truncate max-w-[70px]">{product.seller?.name || 'Vendeur'}</span>
+                            <button
+                              type="button"
+                              disabled={followLoadingId === sellerId}
+                              onClick={() => toggleFollow(sellerId)}
+                              className="text-orange-600 flex-shrink-0"
+                              title="Se désabonner"
+                            >
+                              <UserCheck className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {suggestedSellers.length > 0 && (
+                <div>
+                  <p className={`text-[11px] mb-3 ${darkMode ? 'text-neutral-500' : 'text-neutral-500'}`}>Découvrez d'autres vendeurs :</p>
+                  <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    {suggestedSellers.map((seller) => (
+                      <button
+                        key={seller.id}
+                        type="button"
+                        disabled={followLoadingId === seller.id}
+                        onClick={() => toggleFollow(seller.id)}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-full border text-[11px] font-bold flex-shrink-0 transition ${darkMode ? 'bg-neutral-900 border-neutral-800 hover:border-orange-600' : 'bg-white border-neutral-200 hover:border-orange-600'}`}
+                      >
+                        <span className="w-5 h-5 rounded-full bg-orange-700 text-white flex items-center justify-center text-[9px] font-black">{getInitials(seller.name)}</span>
+                        <span className="truncate max-w-[80px]">{seller.name}</span>
+                        <UserPlus className="w-3.5 h-3.5 text-orange-600" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {followedFeed.length === 0 && suggestedSellers.length === 0 && (
+                <span className="text-[11px] text-neutral-500">Aucun vendeur disponible pour le moment.</span>
+              )}
+            </>
+          )}
+        </section>
+
+        {/* ============ BANNIÈRE : PRODUITS OFFICIELS CBF (BOUTIQUE) ============ */}
+        <section className="max-w-7xl mx-auto px-2 sm:px-4 pt-6">
+          <div className={`rounded-2xl border p-5 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4 ${darkMode ? 'bg-gradient-to-r from-orange-900/30 to-neutral-900 border-orange-800/40' : 'bg-gradient-to-r from-orange-50 to-white border-orange-200'}`}>
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-orange-700 text-white flex items-center justify-center flex-shrink-0">
+                <Store className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className={`font-extrabold text-sm sm:text-base ${darkMode ? 'text-white' : 'text-neutral-900'}`}>Devenez vendeur ou agent CBF</h3>
+                <p className="text-[11px] sm:text-xs text-neutral-500">Gagnez de l'argent en vendant les produits officiels CBF.</p>
               </div>
             </div>
-          )}
+            <Link
+              to="/boutique"
+              className="bg-orange-700 hover:bg-orange-800 text-white font-bold text-xs px-5 py-2.5 rounded-full transition flex items-center gap-1.5 flex-shrink-0"
+            >
+              Nos produits <ChevronDown className="w-3.5 h-3.5 -rotate-90" />
+            </Link>
+          </div>
         </section>
 
         {/* ============ CATALOGUE + CATÉGORIES DYNAMIQUES ============ */}
