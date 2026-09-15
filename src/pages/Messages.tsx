@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Send, Search, User as UserIcon, Mic, Square, Phone, Video,
@@ -34,11 +34,16 @@ interface Message {
 
 export default function MessagesPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [darkMode, setDarkMode] = useState(true);
   const [currentUserId, setCurrentUserId] = useState('');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // NOUVEAU : id du vendeur/contact ciblé via /messages?to=<id> (venant d'un produit).
+  // On le garde en ref pour ne l'utiliser qu'une seule fois, dès que les contacts sont chargés.
+  const pendingTargetIdRef = useRef<string | null>(searchParams.get('to'));
 
   const [acceptedContacts, setAcceptedContacts] = useState<ContactUser[]>([]);
   const [availableUsers, setAvailableUsers] = useState<ContactUser[]>([]);
@@ -338,6 +343,40 @@ export default function MessagesPage() {
 
       if (contactsList.length > 0 && window.innerWidth >= 768) {
         setSelectedContact(contactsList[0]);
+      }
+
+      // NOUVEAU : si on arrive depuis "Contacter le vendeur" (?to=<id>), on ouvre
+      // directement la conversation avec ce vendeur — sans exiger qu'il soit déjà
+      // un "contact accepté" au préalable (sinon le lien resterait bloqué en pratique).
+      const targetId = pendingTargetIdRef.current;
+      if (targetId) {
+        pendingTargetIdRef.current = null; // on ne le rejoue pas si l'utilisateur navigue ensuite dans la page
+
+        const existingContact = contactsList.find((c: ContactUser) => c.id === targetId);
+        const availableMatch = usersList.find((u) => u.id === targetId);
+
+        if (existingContact) {
+          openConversation(existingContact);
+        } else if (availableMatch) {
+          // Vendeur pas encore "contact accepté" : on ouvre quand même la discussion
+          // (les messages passent par le socket, indépendamment du statut de la demande de contact),
+          // et on envoie en parallèle une demande de contact pour qu'il apparaisse ensuite dans "Contacts".
+          const contactCandidate: ContactUser = { ...availableMatch };
+          setAcceptedContacts(prev => (prev.some(c => c.id === contactCandidate.id) ? prev : [contactCandidate, ...prev]));
+          openConversation(contactCandidate);
+          if (availableMatch.contactStatus !== 'PENDING' && availableMatch.contactStatus !== 'ACCEPTED') {
+            handleSendContactRequest(targetId);
+          }
+        } else {
+          setError("Impossible de démarrer la conversation avec ce vendeur (utilisateur introuvable).");
+        }
+
+        // On nettoie l'URL pour ne pas rejouer l'ouverture si la page est rafraîchie/revisitée
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('to');
+          return next;
+        }, { replace: true });
       }
     } catch (err: any) {
       setError(err.message || "Erreur lors du chargement des données.");
