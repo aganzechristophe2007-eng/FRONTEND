@@ -1500,15 +1500,56 @@ export default function Home() {
                     </div>
 
                     <div className="p-1.5 sm:p-4 pt-0">
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          goToProductDetails(productId);
-                        }}
-                        className="w-full py-1 sm:py-2 bg-orange-700/10 hover:bg-orange-700 hover:text-white text-orange-600 font-bold text-[8px] sm:text-xs rounded-md sm:rounded-xl transition border border-orange-600/20 flex items-center justify-center gap-0.5 cursor-pointer"
-                      >
-                        <span>Voir</span> <span className="hidden sm:inline">({photosCount} 📷)</span>
-                      </button>
+                      <div className="grid grid-cols-3 gap-1 sm:gap-1.5">
+                        {/* NOUVEAU : j'aime, avec compteur venant de la base de données */}
+                        <button
+                          type="button"
+                          disabled={likeLoadingId === String(productId)}
+                          onClick={(e) => { e.stopPropagation(); toggleLike(productId); }}
+                          title="J'aime"
+                          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 py-1 sm:py-2 rounded-md sm:rounded-xl border font-bold text-[8px] sm:text-xs transition ${
+                            isProductLiked(productId)
+                              ? 'bg-red-600 border-red-600 text-white'
+                              : darkMode
+                                ? 'bg-neutral-800/60 border-neutral-700 text-neutral-300 hover:bg-red-600 hover:border-red-600 hover:text-white'
+                                : 'bg-neutral-100 border-neutral-200 text-neutral-600 hover:bg-red-600 hover:border-red-600 hover:text-white'
+                          }`}
+                        >
+                          <Heart className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isProductLiked(productId) ? 'fill-white' : ''}`} />
+                          <span>{getLikesCount(productId)}</span>
+                        </button>
+
+                        {/* NOUVEAU : ajout au panier, persisté en base de données */}
+                        <button
+                          type="button"
+                          disabled={addingToCartId === String(productId)}
+                          onClick={(e) => { e.stopPropagation(); addToCart(productId); }}
+                          title="Ajouter au panier"
+                          className={`relative flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 py-1 sm:py-2 rounded-md sm:rounded-xl border font-bold text-[8px] sm:text-xs transition ${
+                            darkMode
+                              ? 'bg-neutral-800/60 border-neutral-700 text-neutral-300 hover:bg-orange-700 hover:border-orange-700 hover:text-white'
+                              : 'bg-neutral-100 border-neutral-200 text-neutral-600 hover:bg-orange-700 hover:border-orange-700 hover:text-white'
+                          }`}
+                        >
+                          <ShoppingCart className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                          <span className="hidden sm:inline">Panier</span>
+                          {justAddedToCartId === String(productId) && (
+                            <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-600 text-white text-[7px] font-extrabold rounded-full flex items-center justify-center">1</span>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            goToProductDetails(productId);
+                          }}
+                          title={`Voir (${photosCount} photo${photosCount > 1 ? 's' : ''})`}
+                          className="py-1 sm:py-2 bg-orange-700/10 hover:bg-orange-700 hover:text-white text-orange-600 font-bold text-[8px] sm:text-xs rounded-md sm:rounded-xl transition border border-orange-600/20 flex items-center justify-center cursor-pointer"
+                        >
+                          Voir
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 );
