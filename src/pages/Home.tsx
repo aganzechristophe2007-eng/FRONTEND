@@ -5,7 +5,7 @@ import {
   Search, PlusCircle, Sun, Moon, Zap, Wallet, Palette, MoreHorizontal, Share2, Flag, Check, 
   MessageSquare, Bell, LogOut, Package, ShieldCheck, Truck, 
   Headphones, MapPin, Home as HomeIcon, Image as ImageIcon, Sparkles, X, ChevronDown, Award, CreditCard, Camera, User as UserIcon, HelpCircle, History, Info, Target, Store,
-  FileText, Cookie, Scale, Mail, Phone, ShoppingCart, UserPlus, UserCheck, Volume2, VolumeX, Send, Users, Video
+  FileText, Cookie, Scale, Mail, Phone, ShoppingCart, UserPlus, UserCheck, Volume2, VolumeX, Send, Users, Video, Heart
 } from 'lucide-react';
 import { apiFetch } from '../api/client';
 
@@ -43,6 +43,8 @@ interface ProductItem {
   isDemande?: boolean;
   videoUrl?: string;
   createdAt?: string;
+  favoritesCount?: number;
+  isFavorited?: boolean;
 }
 
 interface ReelItem {
@@ -137,6 +139,18 @@ export default function Home() {
 
   // --- NOUVEAU : état "réseau social & commerce" ---
   const [cartCount, setCartCount] = useState<number>(0);
+
+  // --- NOUVEAU : j'aime sur les produits (reels + grille), avec compteur ---
+  const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
+  const [likesCountMap, setLikesCountMap] = useState<Record<string, number>>({});
+  const [likeLoadingId, setLikeLoadingId] = useState<string | null>(null);
+
+  // --- NOUVEAU : ajout rapide au panier depuis les reels/produits ---
+  const [addingToCartId, setAddingToCartId] = useState<string | null>(null);
+  const [justAddedToCartId, setJustAddedToCartId] = useState<string | null>(null);
+
+  // --- NOUVEAU : lecteur plein écran pour les reels produits ---
+  const [fullscreenReel, setFullscreenReel] = useState<ReelItem | null>(null);
 
   const [reels, setReels] = useState<ReelItem[]>([]);
   const [loadingReels, setLoadingReels] = useState<boolean>(true);
@@ -425,6 +439,99 @@ export default function Home() {
   const toggleReelMute = useCallback((id: string) => {
     setReelMutedMap(prev => ({ ...prev, [id]: !(prev[id] ?? true) }));
   }, []);
+
+  // --- NOUVEAU : produits déjà aimés par l'utilisateur connecté ---
+  useEffect(() => {
+    if (!token) { setLikedProductIds(new Set()); return; }
+    apiFetch('/favorites/me')
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.data || []);
+        const ids = list.map((f: any) => f.productId || f.product?.id || f.product?._id).filter(Boolean);
+        setLikedProductIds(new Set(ids));
+      })
+      .catch(() => {});
+  }, [token]);
+
+  // --- NOUVEAU : initialise le compteur de "j'aime" affiché sur chaque produit (reels + catalogue) ---
+  useEffect(() => {
+    setLikesCountMap(prev => {
+      const next = { ...prev };
+      [...displayedReels.map(r => r.product), ...featuredProducts].forEach((p) => {
+        const pid = p?.id || p?._id;
+        if (pid && next[pid] === undefined) {
+          next[pid] = p?.favoritesCount ?? 0;
+        }
+      });
+      return next;
+    });
+  }, [displayedReels, featuredProducts]);
+
+  const isProductLiked = useCallback((productId?: string) => !!productId && likedProductIds.has(productId), [likedProductIds]);
+  const getLikesCount = useCallback((productId?: string) => (productId ? (likesCountMap[productId] ?? 0) : 0), [likesCountMap]);
+
+  // --- NOUVEAU : j'aime / plus aimer un produit (optimiste avec rollback en cas d'échec) ---
+  const toggleLike = useCallback(async (productId?: string) => {
+    if (!productId) return;
+    if (!token) { navigate(`/login?redirect=/`); return; }
+    const wasLiked = likedProductIds.has(productId);
+    setLikeLoadingId(productId);
+    setLikedProductIds(prev => {
+      const next = new Set(prev);
+      if (wasLiked) next.delete(productId); else next.add(productId);
+      return next;
+    });
+    setLikesCountMap(prev => ({
+      ...prev,
+      [productId]: Math.max(0, (prev[productId] ?? 0) + (wasLiked ? -1 : 1)),
+    }));
+    try {
+      await apiFetch(`/products/${productId}/favorite`, { method: wasLiked ? 'DELETE' : 'POST' });
+    } catch (err) {
+      // Rollback en cas d'échec réseau/API
+      setLikedProductIds(prev => {
+        const next = new Set(prev);
+        if (wasLiked) next.add(productId); else next.delete(productId);
+        return next;
+      });
+      setLikesCountMap(prev => ({
+        ...prev,
+        [productId]: Math.max(0, (prev[productId] ?? 0) + (wasLiked ? 1 : -1)),
+      }));
+      console.error("Erreur j'aime/plus aimer", err);
+    } finally {
+      setLikeLoadingId(null);
+    }
+  }, [likedProductIds, token, navigate]);
+
+  // --- NOUVEAU : ajouter un produit au panier depuis les reels/produits (optimiste, badge rouge mis à jour) ---
+  const addToCart = useCallback(async (productId?: string) => {
+    if (!productId) return;
+    if (!token) { navigate(`/login?redirect=/`); return; }
+    setAddingToCartId(productId);
+    setCartCount(prev => prev + 1);
+    setJustAddedToCartId(productId);
+    window.setTimeout(() => setJustAddedToCartId(id => (id === productId ? null : id)), 1500);
+    try {
+      await apiFetch('/cart', { method: 'POST', body: JSON.stringify({ productId, quantity: 1 }) });
+    } catch (err) {
+      // Rollback en cas d'échec réseau/API
+      setCartCount(prev => Math.max(0, prev - 1));
+      console.error("Erreur d'ajout au panier", err);
+    } finally {
+      setAddingToCartId(null);
+    }
+  }, [token, navigate]);
+
+  // --- NOUVEAU : ouvrir / fermer le lecteur plein écran d'un reel produit ---
+  const openFullscreenReel = useCallback((reel: ReelItem) => setFullscreenReel(reel), []);
+  const closeFullscreenReel = useCallback(() => setFullscreenReel(null), []);
+
+  // --- NOUVEAU : contacter le vendeur d'un produit depuis un reel ---
+  const contactSeller = useCallback((sellerId?: string) => {
+    if (!sellerId) return;
+    if (!token) { navigate('/login?redirect=/messages'); return; }
+    navigate(`/messages?to=${sellerId}`);
+  }, [token, navigate]);
 
   // --- NOUVEAU : Follow / Unfollow vendeurs ---
   useEffect(() => {
@@ -777,7 +884,7 @@ export default function Home() {
             >
               <ShoppingCart className="w-4 h-4" />
               {cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-orange-700 text-white text-[9px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full">
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full">
                   {cartCount}
                 </span>
               )}
@@ -897,7 +1004,7 @@ export default function Home() {
               <ShoppingCart className="w-4 h-4 text-orange-600" />
               <span>Panier</span>
               {cartCount > 0 && (
-                <span className="bg-orange-700 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
+                <span className="bg-red-600 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
                   {cartCount}
                 </span>
               )}
@@ -1085,7 +1192,7 @@ export default function Home() {
                 <div
                   key={reel.id}
                   className="relative w-[110px] sm:w-[140px] aspect-[9/16] rounded-xl overflow-hidden flex-shrink-0 snap-start bg-black cursor-pointer group"
-                  onClick={() => goToProductDetails(reel.productId)}
+                  onClick={() => openFullscreenReel(reel)}
                 >
                   <video
                     ref={(el) => { videoRefs.current[reel.id] = el; if (el) el.muted = isReelMuted(reel.id); }}
@@ -1103,6 +1210,32 @@ export default function Home() {
                     className="absolute top-1.5 right-1.5 p-1.5 rounded-full bg-black/60 text-white z-10"
                   >
                     {isReelMuted(reel.id) ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                  </button>
+
+                  {/* NOUVEAU : j'aime + compteur */}
+                  <button
+                    type="button"
+                    disabled={likeLoadingId === reel.productId}
+                    onClick={(e) => { e.stopPropagation(); toggleLike(reel.productId); }}
+                    className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 bg-black/60 rounded-full pl-1 pr-1.5 py-1 text-white"
+                    title="J'aime"
+                  >
+                    <Heart className={`w-3 h-3 ${isProductLiked(reel.productId) ? 'fill-red-500 text-red-500' : ''}`} />
+                    <span className="text-[8px] font-bold">{getLikesCount(reel.productId)}</span>
+                  </button>
+
+                  {/* NOUVEAU : ajouter au panier */}
+                  <button
+                    type="button"
+                    disabled={addingToCartId === reel.productId}
+                    onClick={(e) => { e.stopPropagation(); addToCart(reel.productId); }}
+                    className="absolute top-8 right-1.5 z-10 p-1.5 rounded-full bg-black/60 text-white"
+                    title="Ajouter au panier"
+                  >
+                    <ShoppingCart className="w-3 h-3" />
+                    {justAddedToCartId === reel.productId && (
+                      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-600 text-white text-[7px] font-extrabold rounded-full flex items-center justify-center">1</span>
+                    )}
                   </button>
 
                   {reel.product && (
@@ -1522,6 +1655,138 @@ export default function Home() {
                   {legal.sections.map(([title, text]) => <section key={title}><h3 className="font-extrabold text-xs sm:text-sm text-orange-600 mb-2">{title}</h3><p className={`text-xs sm:text-sm leading-6 ${darkMode ? 'text-neutral-300' : 'text-neutral-600'}`}>{text}</p></section>)}
                 </div>
               </motion.aside>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* NOUVEAU : lecteur plein écran d'un reel produit */}
+      <AnimatePresence>
+        {fullscreenReel && (() => {
+          const reelProductId = fullscreenReel.productId;
+          const reelSellerId = fullscreenReel.seller?.id || fullscreenReel.product?.sellerId || fullscreenReel.product?.userId || fullscreenReel.product?.seller?.id || fullscreenReel.product?.seller?._id;
+          const liked = isProductLiked(reelProductId);
+          return (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center"
+              onClick={closeFullscreenReel}
+            >
+              <button
+                type="button"
+                onClick={closeFullscreenReel}
+                className="absolute top-4 right-4 z-20 p-2 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
+                title="Fermer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="relative w-full h-full sm:w-[420px] sm:h-[92vh] sm:rounded-2xl overflow-hidden bg-black"
+              >
+                <video
+                  src={fullscreenReel.videoUrl}
+                  poster={fullscreenReel.thumbnail}
+                  loop
+                  playsInline
+                  autoPlay
+                  muted={isReelMuted(fullscreenReel.id)}
+                  className="w-full h-full object-contain"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => toggleReelMute(fullscreenReel.id)}
+                  className="absolute top-3 left-3 z-10 p-2 rounded-full bg-black/60 text-white"
+                  title="Son"
+                >
+                  {isReelMuted(fullscreenReel.id) ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                </button>
+
+                {/* NOUVEAU : colonne d'actions façon reels (j'aime + panier) */}
+                <div className="absolute right-3 bottom-32 z-10 flex flex-col items-center gap-4">
+                  <button
+                    type="button"
+                    disabled={likeLoadingId === reelProductId}
+                    onClick={() => toggleLike(reelProductId)}
+                    className="flex flex-col items-center gap-1 text-white"
+                    title="J'aime"
+                  >
+                    <span className={`p-2.5 rounded-full ${liked ? 'bg-red-600' : 'bg-black/50'}`}>
+                      <Heart className={`w-5 h-5 ${liked ? 'fill-white' : ''}`} />
+                    </span>
+                    <span className="text-[10px] font-bold">{getLikesCount(reelProductId)}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={addingToCartId === reelProductId}
+                    onClick={() => addToCart(reelProductId)}
+                    className="flex flex-col items-center gap-1 text-white"
+                    title="Ajouter au panier"
+                  >
+                    <span className="relative p-2.5 rounded-full bg-black/50">
+                      <ShoppingCart className="w-5 h-5" />
+                      {justAddedToCartId === reelProductId && (
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center">1</span>
+                      )}
+                    </span>
+                    <span className="text-[10px] font-bold">Panier</span>
+                  </button>
+                </div>
+
+                {/* Bas de l'écran : infos produit + actions principales */}
+                <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 pt-14 pb-4">
+                  {fullscreenReel.product && (
+                    <div className="flex items-center gap-2 mb-3 cursor-pointer" onClick={() => goToProductDetails(reelProductId)}>
+                      <img
+                        src={getImageUrl(fullscreenReel.product.images?.[0])}
+                        className="w-9 h-9 rounded-full object-cover border border-white/30 flex-shrink-0"
+                        alt=""
+                      />
+                      <div className="min-w-0">
+                        <p className="text-white text-xs font-bold truncate">{fullscreenReel.product.title}</p>
+                        <p className="text-white/70 text-[10px] truncate">
+                          {fullscreenReel.seller?.name || fullscreenReel.product.seller?.name || 'Vendeur'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => contactSeller(reelSellerId)}
+                      className="flex items-center justify-center gap-1 bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold py-2.5 rounded-full transition"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" /> Contacter
+                    </button>
+                    <button
+                      type="button"
+                      disabled={likeLoadingId === reelProductId}
+                      onClick={() => toggleLike(reelProductId)}
+                      className={`flex items-center justify-center gap-1 text-[11px] font-bold py-2.5 rounded-full transition ${
+                        liked ? 'bg-red-600 text-white' : 'bg-white/10 hover:bg-white/20 text-white'
+                      }`}
+                    >
+                      <Heart className={`w-3.5 h-3.5 ${liked ? 'fill-white' : ''}`} /> Aimer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => goToProductDetails(reelProductId)}
+                      className="flex items-center justify-center gap-1 bg-orange-700 hover:bg-orange-800 text-white text-[11px] font-bold py-2.5 rounded-full transition"
+                    >
+                      <Package className="w-3.5 h-3.5" /> Voir
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
             </motion.div>
           );
         })()}
