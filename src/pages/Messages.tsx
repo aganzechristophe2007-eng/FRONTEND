@@ -1,1104 +1,2016 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  ArrowLeft, Send, Search, User as UserIcon, Mic, Square, Phone, Video,
-  PhoneOff, Paperclip, Smile, CheckCheck, Check, Play, Image as ImageIcon,
-  MoreVertical, Sun, Moon, X, UserPlus, Headphones
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { 
+  Search, PlusCircle, Sun, Moon, Zap, Wallet, Palette, MoreHorizontal, Share2, Flag, Check, 
+  MessageSquare, Bell, LogOut, Package, ShieldCheck, Truck, 
+  Headphones, MapPin, Home as HomeIcon, Image as ImageIcon, Sparkles, X, ChevronDown, Award, CreditCard, Camera, User as UserIcon, HelpCircle, History, Info, Target, Store,
+  FileText, Cookie, Scale, Mail, Phone, ShoppingCart, UserPlus, UserCheck, Volume2, VolumeX, Send, Users, Video, Heart
 } from 'lucide-react';
-import { io, Socket } from 'socket.io-client';
+import { apiFetch } from '../api/client';
 
-const BACKEND_URL = 'https://cbfsoko-backend.onrender.com';
-const COMMON_EMOJIS = ['😀', '😂', '😍', '👍', '🙏', '🔥', '🎉', '❤️', '😎', '😅', '👏', '✨', '👋', '💯', '🤔', '😊'];
-
-interface ContactUser {
-  id: string;
+interface User {
+  id?: string;
+  _id?: string;
   name: string;
-  email: string;
+  balance: number;
   role?: string;
   avatar?: string;
-  contactStatus?: 'ACCEPTED' | 'PENDING' | 'REJECTED' | null;
+  profileImage?: string;
 }
 
-interface Message {
+interface SellerLite {
   id: string;
-  senderId: string;
-  receiverId: string;
-  content: string;
-  createdAt: string;
-  isRead?: boolean;
-  tempId?: string;
-  pending?: boolean;
-  sender?: { name: string };
+  name: string;
+  avatar?: string;
 }
 
-export default function MessagesPage() {
+interface ProductItem {
+  id?: string;
+  _id?: string;
+  title: string;
+  priceUSD: number;
+  priceCDF: number;
+  category?: { name: string } | string;
+  images: string[];
+  sellerId?: string;
+  userId?: string;
+  seller?: { id: string; _id?: string; name: string; email?: string };
+  location?: string;
+  state?: string;
+  quantity?: number | string;
+  type?: string;
+  isDemande?: boolean;
+  videoUrl?: string;
+  createdAt?: string;
+  favoritesCount?: number;
+  isFavorited?: boolean;
+}
+
+interface ReelItem {
+  id: string;
+  videoUrl: string;
+  thumbnail?: string;
+  caption?: string;
+  productId?: string;
+  product?: ProductItem;
+  seller?: SellerLite;
+}
+
+// Icônes réseaux sociaux en SVG inline (évite toute dépendance à lucide-react pour les logos de marque)
+const FacebookIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5.02 3.66 9.18 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.23.2 2.23.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.89h2.78l-.44 2.91h-2.34V22c4.78-.76 8.44-4.92 8.44-9.94Z" />
+  </svg>
+);
+
+const InstagramIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
+    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37Z" />
+    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+  </svg>
+);
+
+const TwitterIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M18.9 2H22l-7.6 8.7L23.3 22h-7.1l-5.5-7.2L4.3 22H1l8.1-9.3L1 2h7.3l5 6.6L18.9 2Zm-1.2 18h1.9L7.4 4H5.4l12.3 16Z" />
+  </svg>
+);
+
+const YoutubeIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M23.5 6.6a3 3 0 0 0-2.1-2.1C19.5 4 12 4 12 4s-7.5 0-9.4.5A3 3 0 0 0 .5 6.6 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.4 3 3 0 0 0 2.1 2.1C4.5 20 12 20 12 20s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.4ZM9.6 15.5v-7l6.3 3.5-6.3 3.5Z" />
+  </svg>
+);
+
+export default function Home() {
+  const [darkMode, setDarkMode] = useState<boolean>(() => localStorage.getItem('cbfsoko-theme-mode') === 'light' ? false : true);
+  const [themeMode, setThemeMode] = useState<'dark' | 'light' | 'system'>(() => {
+    const saved = localStorage.getItem('cbfsoko-theme-mode');
+    return saved === 'light' || saved === 'system' ? saved : 'dark';
+  });
+  const [showThemeMenu, setShowThemeMenu] = useState(false);
+  const themeMenuRef = useRef<HTMLDivElement>(null);
+  const [postFilter, setPostFilter] = useState<'ALL' | 'SALE' | 'REQUEST'>('ALL');
+  const [openProductMenu, setOpenProductMenu] = useState<string | null>(null);
+  const [legalPanel, setLegalPanel] = useState<'terms' | 'privacy' | 'mentions' | 'cookies' | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showServicesDropdown, setShowServicesDropdown] = useState<boolean>(false);
+  const [showMobileServicesModal, setShowMobileServicesModal] = useState<boolean>(false);
+  const location = useLocation();
+  
+  const servicesDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('user');
+    try {
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string>(() => {
+    const offlineAvatar = localStorage.getItem('offline_avatar');
+    if (offlineAvatar) return offlineAvatar;
+    const saved = localStorage.getItem('user');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.avatar) {
+          const cleanPath = parsed.avatar.replace(/\\/g, '/').replace(/^\/+/, '');
+          return cleanPath.startsWith('http') ? cleanPath : `https://cbfsoko-backend.onrender.com/${cleanPath.startsWith('uploads/') ? cleanPath : 'uploads/' + cleanPath}`;
+        }
+      } catch {
+        // Ignore
+      }
+    }
+    return '';
+  });
+
+  const [featuredProducts, setFeaturedProducts] = useState<ProductItem[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState<boolean>(true);
+  const [ordersCount, setOrdersCount] = useState<number>(0);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
+  const [unreadNotifsCount, setUnreadNotifsCount] = useState<number>(0);
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [darkMode, setDarkMode] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState('');
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  // --- NOUVEAU : état "réseau social & commerce" ---
+  const [cartCount, setCartCount] = useState<number>(0);
 
-  // NOUVEAU : id du vendeur/contact ciblé via /messages?to=<id> (venant d'un produit).
-  // On le garde en ref pour ne l'utiliser qu'une seule fois, dès que les contacts sont chargés.
-  const pendingTargetIdRef = useRef<string | null>(searchParams.get('to'));
+  // --- NOUVEAU : j'aime sur les produits (reels + grille), avec compteur ---
+  const [likedProductIds, setLikedProductIds] = useState<Set<string>>(new Set());
+  const [likesCountMap, setLikesCountMap] = useState<Record<string, number>>({});
+  const [likeLoadingId, setLikeLoadingId] = useState<string | null>(null);
 
-  const [acceptedContacts, setAcceptedContacts] = useState<ContactUser[]>([]);
-  const [availableUsers, setAvailableUsers] = useState<ContactUser[]>([]);
-  const [selectedContact, setSelectedContact] = useState<ContactUser | null>(null);
-  const [showMobileChat, setShowMobileChat] = useState(false);
-  const [activeBottomTab, setActiveBottomTab] = useState<'chats' | 'people'>('chats');
-  const [searchQuery, setSearchQuery] = useState('');
+  // --- NOUVEAU : ajout rapide au panier depuis les reels/produits ---
+  const [addingToCartId, setAddingToCartId] = useState<string | null>(null);
+  const [justAddedToCartId, setJustAddedToCartId] = useState<string | null>(null);
 
-  const [messagesByContact, setMessagesByContact] = useState<Record<string, Message[]>>({});
-  const [lastMessageByContact, setLastMessageByContact] = useState<Record<string, Message>>({});
-  const [unreadByContact, setUnreadByContact] = useState<Record<string, number>>({});
+  // --- NOUVEAU : lecteur plein écran pour les reels produits ---
+  const [fullscreenReel, setFullscreenReel] = useState<ReelItem | null>(null);
 
-  const [newMessage, setNewMessage] = useState('');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [reels, setReels] = useState<ReelItem[]>([]);
+  const [loadingReels, setLoadingReels] = useState<boolean>(true);
+  const [reelsApiAvailable, setReelsApiAvailable] = useState<boolean>(true);
+  const [reelMutedMap, setReelMutedMap] = useState<Record<string, boolean>>({});
+  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
-  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
-  const [typingFrom, setTypingFrom] = useState<Set<string>>(new Set());
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const [followLoadingId, setFollowLoadingId] = useState<string | null>(null);
+  const [followError, setFollowError] = useState<string | null>(null);
 
-  // Vocal
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const recordTimerRef = useRef<any>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  // Appels WebRTC
-  const [inCall, setInCall] = useState(false);
-  const [isCallingOut, setIsCallingOut] = useState(false);
-  const [incomingCallData, setIncomingCallData] = useState<any>(null);
-  const [callType, setCallType] = useState<'audio' | 'video'>('audio');
-  const [callDuration, setCallDuration] = useState(0);
-  const localVideoRef = useRef<HTMLVideoElement | null>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const ringtoneRef = useRef<HTMLAudioElement | null>(null);
-  const callTimerRef = useRef<any>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [feedbackText, setFeedbackText] = useState<string>('');
+  const [feedbackSent, setFeedbackSent] = useState<boolean>(false);
+  const [feedbackError, setFeedbackError] = useState<boolean>(false);
+  const [sendingFeedback, setSendingFeedback] = useState<boolean>(false);
+  // --- FIN NOUVEAU ---
 
-  const socketRef = useRef<Socket | null>(null);
+  // --- NOUVEAU : bannière promo animée façon "affiche" (carrousel auto, style Airtel) ---
+  const [promoIndex, setPromoIndex] = useState<number>(0);
+  const [promoDirection, setPromoDirection] = useState<number>(1);
 
-  // --- Miroirs "ref" pour éviter les closures figées dans les listeners socket ---
-  const selectedContactRef = useRef<ContactUser | null>(null);
-  const callDurationRef = useRef(0);
-  const callTypeRef = useRef<'audio' | 'video'>('audio');
-  useEffect(() => { selectedContactRef.current = selectedContact; }, [selectedContact]);
-  useEffect(() => { callDurationRef.current = callDuration; }, [callDuration]);
-  useEffect(() => { callTypeRef.current = callType; }, [callType]);
+  const LOGO_URL = '/logo.png'; 
 
-  const messages = selectedContact ? (messagesByContact[selectedContact.id] || []) : [];
-
-  const getAvatarUrl = useCallback((path?: string) => {
-    if (!path || typeof path !== 'string') return '';
-    const trimmed = path.trim();
-    if (!trimmed) return '';
-    if (trimmed.startsWith('http') || trimmed.startsWith('blob:') || trimmed.startsWith('data:')) return trimmed;
-    const cleanPath = trimmed.replace(/\\/g, '/');
-    const formattedPath = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
-    if (!formattedPath.includes('uploads')) return `${BACKEND_URL}/uploads${formattedPath}`;
-    return `${BACKEND_URL}${formattedPath}`;
+  const getImageUrl = useCallback((path?: string) => {
+    if (!path) return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=500&q=80';
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('blob:') || path.startsWith('data:')) {
+      return path;
+    }
+    const cleanPath = path.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (cleanPath.startsWith('uploads/')) {
+      return `https://cbfsoko-backend.onrender.com/${cleanPath}`;
+    }
+    return `https://cbfsoko-backend.onrender.com/uploads/${cleanPath}`;
   }, []);
 
-  const getInitials = (name?: string) => {
+  const updateAvatarFromStorage = useCallback(() => {
+    const updatedUserStr = localStorage.getItem('user');
+    const offlineAv = localStorage.getItem('offline_avatar');
+    if (offlineAv) {
+      setUserAvatarUrl(offlineAv);
+      return;
+    }
+    if (updatedUserStr) {
+      try {
+        const parsed = JSON.parse(updatedUserStr);
+        if (parsed.avatar) {
+          const fullUrl = getImageUrl(parsed.avatar);
+          setUserAvatarUrl(fullUrl);
+        } else {
+          setUserAvatarUrl('');
+        }
+      } catch (e) {
+        console.error("Erreur mise à jour avatar", e);
+      }
+    }
+  }, [getImageUrl]);
+
+  // Gestion réelle du thème : clair, sombre ou automatique selon le système.
+  useEffect(() => {
+    const applyTheme = (mode: 'dark' | 'light' | 'system') => {
+      const isDark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      setDarkMode(isDark);
+      localStorage.setItem('cbfsoko-theme-mode', mode);
+      localStorage.setItem('cbfsoko-theme', isDark ? 'dark' : 'light');
+    };
+    applyTheme(themeMode);
+    if (themeMode !== 'system') return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const listener = () => setDarkMode(media.matches);
+    media.addEventListener?.('change', listener);
+    return () => media.removeEventListener?.('change', listener);
+  }, [themeMode]);
+
+  // Gestion de la fermeture au clic en dehors pour le menu dropdown desktop
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (servicesDropdownRef.current && !servicesDropdownRef.current.contains(target)) {
+        setShowServicesDropdown(false);
+      }
+      if (themeMenuRef.current && !themeMenuRef.current.contains(target)) {
+        setShowThemeMenu(false);
+      }
+      setOpenProductMenu(null);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    const currentToken = localStorage.getItem('token');
+    updateAvatarFromStorage();
+
+    if (currentToken) {
+      apiFetch('/auth/me')
+        .then(response => {
+          const actualUser = response.data || response;
+          if (actualUser) {
+            setUser(actualUser);
+            localStorage.setItem('user', JSON.stringify(actualUser));
+            
+            if (actualUser.avatar) {
+              const fullUrl = getImageUrl(actualUser.avatar);
+              setUserAvatarUrl(fullUrl);
+              localStorage.setItem('offline_avatar', fullUrl);
+            } else {
+              setUserAvatarUrl('');
+              localStorage.removeItem('offline_avatar');
+            }
+          }
+        })
+        .catch((err) => {
+          if (err?.status === 401 || err?.message?.includes('401')) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            localStorage.removeItem('offline_avatar');
+            setToken(null);
+            setUser(null);
+            setUserAvatarUrl('');
+          }
+        });
+    }
+
+    window.addEventListener('avatar-updated', updateAvatarFromStorage);
+    window.addEventListener('storage', updateAvatarFromStorage);
+
+    apiFetch('/products')
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.data || []);
+        setFeaturedProducts(list.slice(0, 16));
+      })
+      .catch(err => {
+        console.error("Erreur chargement produits", err);
+      })
+      .finally(() => {
+        setLoadingProducts(false);
+      });
+
+    return () => {
+      window.removeEventListener('avatar-updated', updateAvatarFromStorage);
+      window.removeEventListener('storage', updateAvatarFromStorage);
+    };
+  }, [getImageUrl, updateAvatarFromStorage]);
+
+  useEffect(() => {
+    const currentToken = localStorage.getItem('token');
+    if (!currentToken) {
+      setUnreadMessagesCount(0);
+      setUnreadNotifsCount(0);
+      return;
+    }
+
+    let currentUserId = '';
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const parsedUser = JSON.parse(userStr);
+        currentUserId = parsedUser.id || parsedUser._id || '';
+      }
+    } catch {}
+
+    const fetchUnreadCounts = async () => {
+      try {
+        try {
+          const resMsg = await apiFetch('/messages');
+          const msgList = Array.isArray(resMsg) ? resMsg : (resMsg.data || resMsg.messages || []);
+          const unreadMsgs = msgList.filter((m: any) => {
+            const receiverId = m.receiverId || m.receiver?._id || m.receiver?.id;
+            return receiverId === currentUserId && m.isRead === false;
+          });
+          setUnreadMessagesCount(unreadMsgs.length);
+        } catch {
+          const resMsgCount = await apiFetch('/messages/unread-count').catch(() => ({ count: 0 }));
+          setUnreadMessagesCount(resMsgCount.count || resMsgCount.data || 0);
+        }
+
+        try {
+          const resNotif = await apiFetch('/notifications');
+          const notifList = Array.isArray(resNotif) ? resNotif : (resNotif.data || resNotif.notifications || []);
+          const unreadNotifs = notifList.filter((n: any) => n.isRead === false);
+          setUnreadNotifsCount(unreadNotifs.length);
+        } catch {
+          const resNotifCount = await apiFetch('/notifications/unread-count').catch(() => ({ count: 0 }));
+          setUnreadNotifsCount(resNotifCount.count || resNotifCount.data || 0);
+        }
+      } catch (err) {
+        console.error("Erreur compteurs", err);
+      }
+    };
+
+    fetchUnreadCounts();
+    const interval = setInterval(fetchUnreadCounts, 15000);
+    return () => clearInterval(interval);
+  }, [token]);
+
+  useEffect(() => {
+    const currentToken = localStorage.getItem('token');
+    if (!currentToken) {
+      setOrdersCount(0);
+      return;
+    }
+
+    const fetchUserOrdersCount = async () => {
+      try {
+        let currentUserId = '';
+        try {
+          const userStr = localStorage.getItem('user');
+          if (userStr) {
+            const parsedUser = JSON.parse(userStr);
+            currentUserId = parsedUser.id || parsedUser._id || '';
+          }
+        } catch {}
+
+        let ordersLength = 0;
+        let demandesLength = 0;
+
+        try {
+          const resOrders = await apiFetch('/orders');
+          const ordersList = Array.isArray(resOrders) ? resOrders : (resOrders.data || resOrders.orders || []);
+          ordersLength = ordersList.length;
+        } catch {}
+
+        try {
+          const resProducts = await apiFetch('/products');
+          const productsList = Array.isArray(resProducts) ? resProducts : (resProducts.data || []);
+          
+          const userDemandes = productsList.filter((p: ProductItem) => {
+            const pSellerId = p.sellerId || p.userId || p.seller?.id || p.seller?._id;
+            const matchesUser = currentUserId ? (pSellerId === currentUserId) : true;
+            const typeStr = String(p.type || '').toUpperCase();
+            const titleStr = String(p.title || '');
+            return matchesUser && (typeStr === 'REQUEST' || titleStr.includes('[DEMANDE]') || p.isDemande === true);
+          });
+          demandesLength = userDemandes.length;
+        } catch {}
+
+        setOrdersCount(ordersLength + demandesLength);
+      } catch (err) {
+        console.error("Erreur commandes", err);
+      }
+    };
+
+    fetchUserOrdersCount();
+  }, [token, user]);
+
+  // --- NOUVEAU : panier ---
+  useEffect(() => {
+    const currentToken = localStorage.getItem('token');
+    if (!currentToken) { setCartCount(0); return; }
+    apiFetch('/cart')
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.items || data.data || []);
+        setCartCount(Array.isArray(list) ? list.length : 0);
+      })
+      .catch(() => {});
+  }, [token]);
+
+  // --- NOUVEAU : reels / vidéos produits (30s max), avec repli sur les produits ayant une vidéo ---
+  useEffect(() => {
+    apiFetch('/reels')
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.data || []);
+        setReels(list.slice(0, 12));
+      })
+      .catch(() => setReelsApiAvailable(false))
+      .finally(() => setLoadingReels(false));
+  }, []);
+
+  const displayedReels = useMemo<ReelItem[]>(() => {
+    if (reelsApiAvailable && reels.length > 0) return reels;
+    return featuredProducts
+      .filter(p => !!p.videoUrl)
+      .slice(0, 12)
+      .map(p => ({
+        id: String(p.id || p._id),
+        videoUrl: p.videoUrl as string,
+        thumbnail: getImageUrl(p.images?.[0]),
+        caption: p.title,
+        productId: p.id || p._id,
+        product: p,
+        seller: p.seller ? { id: p.seller.id || p.seller._id || '', name: p.seller.name } : undefined,
+      }));
+  }, [reels, reelsApiAvailable, featuredProducts, getImageUrl]);
+
+  const isReelMuted = useCallback((id: string) => reelMutedMap[id] ?? true, [reelMutedMap]);
+  const toggleReelMute = useCallback((id: string) => {
+    setReelMutedMap(prev => ({ ...prev, [id]: !(prev[id] ?? true) }));
+  }, []);
+
+  // --- NOUVEAU : produits déjà aimés par l'utilisateur connecté ---
+  useEffect(() => {
+    if (!token) { setLikedProductIds(new Set()); return; }
+    apiFetch('/favorites/me')
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.data || []);
+        const ids = list.map((f: any) => f.productId || f.product?.id || f.product?._id).filter(Boolean);
+        setLikedProductIds(new Set(ids));
+      })
+      .catch(() => {});
+  }, [token]);
+
+  // --- NOUVEAU : initialise le compteur de "j'aime" affiché sur chaque produit (reels + catalogue) ---
+  useEffect(() => {
+    setLikesCountMap(prev => {
+      const next = { ...prev };
+      [...displayedReels.map(r => r.product), ...featuredProducts].forEach((p) => {
+        const pid = p?.id || p?._id;
+        if (pid && next[pid] === undefined) {
+          next[pid] = p?.favoritesCount ?? 0;
+        }
+      });
+      return next;
+    });
+  }, [displayedReels, featuredProducts]);
+
+  const isProductLiked = useCallback((productId?: string) => !!productId && likedProductIds.has(productId), [likedProductIds]);
+  const getLikesCount = useCallback((productId?: string) => (productId ? (likesCountMap[productId] ?? 0) : 0), [likesCountMap]);
+
+  // --- NOUVEAU : j'aime / plus aimer un produit (optimiste avec rollback en cas d'échec) ---
+  const toggleLike = useCallback(async (productId?: string) => {
+    if (!productId) return;
+    if (!token) { navigate(`/login?redirect=/`); return; }
+    const wasLiked = likedProductIds.has(productId);
+    setLikeLoadingId(productId);
+    setLikedProductIds(prev => {
+      const next = new Set(prev);
+      if (wasLiked) next.delete(productId); else next.add(productId);
+      return next;
+    });
+    setLikesCountMap(prev => ({
+      ...prev,
+      [productId]: Math.max(0, (prev[productId] ?? 0) + (wasLiked ? -1 : 1)),
+    }));
+    try {
+      await apiFetch(`/products/${productId}/favorite`, { method: wasLiked ? 'DELETE' : 'POST' });
+    } catch (err) {
+      // Rollback en cas d'échec réseau/API
+      setLikedProductIds(prev => {
+        const next = new Set(prev);
+        if (wasLiked) next.add(productId); else next.delete(productId);
+        return next;
+      });
+      setLikesCountMap(prev => ({
+        ...prev,
+        [productId]: Math.max(0, (prev[productId] ?? 0) + (wasLiked ? 1 : -1)),
+      }));
+      console.error("Erreur j'aime/plus aimer", err);
+    } finally {
+      setLikeLoadingId(null);
+    }
+  }, [likedProductIds, token, navigate]);
+
+  // --- NOUVEAU : ajouter un produit au panier depuis les reels/produits (optimiste, badge rouge mis à jour) ---
+  const addToCart = useCallback(async (productId?: string) => {
+    if (!productId) return;
+    if (!token) { navigate(`/login?redirect=/`); return; }
+    setAddingToCartId(productId);
+    setCartCount(prev => prev + 1);
+    setJustAddedToCartId(productId);
+    window.setTimeout(() => setJustAddedToCartId(id => (id === productId ? null : id)), 1500);
+    try {
+      await apiFetch('/cart', { method: 'POST', body: JSON.stringify({ productId, quantity: 1 }) });
+    } catch (err) {
+      // Rollback en cas d'échec réseau/API
+      setCartCount(prev => Math.max(0, prev - 1));
+      console.error("Erreur d'ajout au panier", err);
+    } finally {
+      setAddingToCartId(null);
+    }
+  }, [token, navigate]);
+
+  // --- NOUVEAU : ouvrir / fermer le lecteur plein écran d'un reel produit ---
+  // IMPORTANT : la vignette de la grille (videoRefs) reste montée en arrière-plan pendant
+  // que le lecteur plein écran est ouvert. Si on ne la met pas en pause, les deux <video>
+  // lisent en même temps -> son doublé quand on active le son en plein écran.
+  const openFullscreenReel = useCallback((reel: ReelItem) => {
+    const gridVideo = videoRefs.current[reel.id];
+    if (gridVideo) gridVideo.pause();
+    setFullscreenReel(reel);
+  }, []);
+  const closeFullscreenReel = useCallback(() => {
+    setFullscreenReel(prev => {
+      if (prev) {
+        const gridVideo = videoRefs.current[prev.id];
+        if (gridVideo) {
+          gridVideo.currentTime = 0;
+          gridVideo.play().catch(() => {});
+        }
+      }
+      return null;
+    });
+  }, []);
+
+  // --- NOUVEAU : contacter le vendeur d'un produit depuis un reel ---
+  const contactSeller = useCallback((sellerId?: string) => {
+    if (!sellerId) return;
+    if (!token) { navigate('/login?redirect=/messages'); return; }
+    navigate(`/messages?to=${sellerId}`);
+  }, [token, navigate]);
+
+  // --- NOUVEAU : Follow / Unfollow vendeurs ---
+  useEffect(() => {
+    if (!token) { setFollowingIds(new Set()); return; }
+    apiFetch('/follows/me')
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.data || []);
+        const ids = list.map((f: any) => f.sellerId || f.userId || f.id || f._id).filter(Boolean);
+        setFollowingIds(new Set(ids));
+      })
+      .catch(() => {});
+  }, [token]);
+
+  const toggleFollow = useCallback(async (sellerId?: string) => {
+    if (!sellerId) return;
+    if (!token) { navigate('/login?redirect=/'); return; }
+    const isFollowing = followingIds.has(sellerId);
+    setFollowLoadingId(sellerId);
+    setFollowError(null);
+    setFollowingIds(prev => {
+      const next = new Set(prev);
+      if (isFollowing) next.delete(sellerId); else next.add(sellerId);
+      return next;
+    });
+    try {
+      await apiFetch(`/sellers/${sellerId}/follow`, { method: isFollowing ? 'DELETE' : 'POST' });
+    } catch (err) {
+      // Rollback en cas d'échec réseau/API
+      setFollowingIds(prev => {
+        const next = new Set(prev);
+        if (isFollowing) next.add(sellerId); else next.delete(sellerId);
+        return next;
+      });
+      console.error("Erreur follow/unfollow", err);
+      setFollowError("Action impossible pour le moment, réessayez.");
+    } finally {
+      setFollowLoadingId(null);
+    }
+  }, [followingIds, token, navigate]);
+
+  const followedFeed = useMemo(() => {
+    if (followingIds.size === 0) return [];
+    return featuredProducts
+      .filter(p => {
+        const sellerId = p.sellerId || p.userId || p.seller?.id || p.seller?._id;
+        return sellerId ? followingIds.has(sellerId) : false;
+      })
+      .sort((a, b) => {
+        const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return db - da;
+      });
+  }, [featuredProducts, followingIds]);
+
+  const suggestedSellers = useMemo<SellerLite[]>(() => {
+    const map = new Map<string, SellerLite>();
+    featuredProducts.forEach(p => {
+      const id = p.sellerId || p.userId || p.seller?.id || p.seller?._id;
+      if (id && !map.has(id) && !followingIds.has(id)) {
+        map.set(id, { id, name: p.seller?.name || 'Vendeur' });
+      }
+    });
+    return Array.from(map.values()).slice(0, 10);
+  }, [featuredProducts, followingIds]);
+
+  // --- NOUVEAU : catégories dynamiques calculées depuis /products ---
+  const dynamicCategories = useMemo(() => {
+    const map = new Map<string, number>();
+    featuredProducts.forEach(p => {
+      const name = typeof p.category === 'object' && p.category !== null ? p.category.name : (typeof p.category === 'string' ? p.category : null);
+      if (name) map.set(name, (map.get(name) || 0) + 1);
+    });
+    return Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 12);
+  }, [featuredProducts]);
+
+  const handleSendFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feedbackText.trim()) return;
+    setSendingFeedback(true);
+    setFeedbackError(false);
+    try {
+      await apiFetch('/feedback', { method: 'POST', body: JSON.stringify({ message: feedbackText }) });
+      setFeedbackSent(true);
+      setFeedbackText('');
+    } catch (err) {
+      console.error('Erreur envoi feedback', err);
+      setFeedbackError(true);
+    } finally {
+      setSendingFeedback(false);
+    }
+  };
+  // --- FIN NOUVEAU ---
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('offline_avatar');
+    setToken(null);
+    setUser(null);
+    setUserAvatarUrl('');
+    navigate('/login');
+  };
+
+  const getInitials = (name: string) => {
     if (!name) return "U";
     return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
   };
 
-  const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  useEffect(() => { scrollToBottom(); }, [messages.length]);
-
-  // ============ INITIALISATION ============
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const userStr = localStorage.getItem('user');
-    if (!token || !userStr) {
-      navigate('/login?redirect=/messages');
-      return;
+  const handleProtectedAction = (destination: string) => {
+    if (!token) {
+      navigate(`/login?redirect=${destination}`);
+    } else {
+      navigate(destination);
     }
-    try {
-      const user = JSON.parse(userStr);
-      if (user.id) setCurrentUserId(user.id);
-    } catch {}
-    loadInitialData(token);
-    ringtoneRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/1359/1359-preview.mp3');
-    if (ringtoneRef.current) ringtoneRef.current.loop = true;
+  };
+
+  const handleOpenMessages = async () => {
+    setUnreadMessagesCount(0);
+    try { await apiFetch('/messages/mark-read', { method: 'POST' }); } catch {}
+    handleProtectedAction('/messages');
+  };
+
+  const handleOpenNotifications = () => {
+    setUnreadNotifsCount(0);
+    handleProtectedAction('/notifications');
+  };
+      
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/products?search=${encodeURIComponent(searchQuery)}`);
+    } else {
+      navigate('/products');
+    }
+  };
+
+  // Redirection centralisée vers ProductDetails (route /products/:id)
+  const goToProductDetails = useCallback((productId?: string) => {
+    if (!productId) return;
+    navigate(`/products/${productId}`);
   }, [navigate]);
 
-  // ============ SOCKET : connexion unique, événements temps réel ============
-  useEffect(() => {
-    if (!currentUserId) return;
-
-    const socket = io(BACKEND_URL);
-    socketRef.current = socket;
-
-    socket.on('connect', () => {
-      socket.emit('register', currentUserId);
-    });
-
-    socket.on('online-users', ({ userIds }: { userIds: string[] }) => {
-      setOnlineUserIds(new Set(userIds));
-    });
-    socket.on('user-online', ({ userId }: { userId: string }) => {
-      setOnlineUserIds(prev => new Set(prev).add(userId));
-    });
-    socket.on('user-offline', ({ userId }: { userId: string }) => {
-      setOnlineUserIds(prev => {
-        const next = new Set(prev);
-        next.delete(userId);
-        return next;
-      });
-    });
-
-    // Nouveau message reçu OU confirmation de notre propre envoi
-    socket.on('new-message', (msg: Message) => {
-      const otherId = msg.senderId === currentUserId ? msg.receiverId : msg.senderId;
-
-      setMessagesByContact(prev => {
-        const list = prev[otherId] || [];
-        // Remplace le message optimiste (tempId) par la version confirmée du serveur
-        const withoutTemp = msg.tempId ? list.filter(m => m.id !== msg.tempId) : list;
-        if (withoutTemp.some(m => m.id === msg.id)) return prev;
-        return { ...prev, [otherId]: [...withoutTemp, { ...msg, pending: false }] };
-      });
-
-      setLastMessageByContact(prev => ({ ...prev, [otherId]: msg }));
-
-      // Fait remonter la conversation en haut de la liste
-      setAcceptedContacts(prev => {
-        const idx = prev.findIndex(c => c.id === otherId);
-        if (idx <= 0) return prev;
-        const copy = [...prev];
-        const [item] = copy.splice(idx, 1);
-        return [item, ...copy];
-      });
-
-      const isCurrentlyOpen = selectedContactRef.current?.id === otherId;
-
-      // Message reçu d'un tiers (pas notre propre confirmation)
-      if (msg.senderId !== currentUserId) {
-        if (isCurrentlyOpen) {
-          socket.emit('message-seen', { otherUserId: otherId });
-        } else {
-          setUnreadByContact(prev => ({ ...prev, [otherId]: (prev[otherId] || 0) + 1 }));
-          // Notification même hors de l'onglet de cette conversation (tant qu'on est sur /messages)
-          playNotificationSound();
-          if (Notification && Notification.permission === 'granted') {
-            new Notification(msg.sender?.name || 'Nouveau message', { body: isMediaFile(msg.content) ? '📎 Fichier joint' : msg.content });
-          }
-        }
-      }
-    });
-
-    socket.on('message-error', ({ tempId, message }: any) => {
-      setError(message || "Erreur d'envoi.");
-      if (tempId) {
-        setMessagesByContact(prev => {
-          const updated: Record<string, Message[]> = {};
-          for (const key in prev) {
-            updated[key] = prev[key].map(m => m.id === tempId ? { ...m, pending: false } : m);
-          }
-          return updated;
-        });
-      }
-    });
-
-    socket.on('typing', ({ senderId }: { senderId: string }) => {
-      setTypingFrom(prev => new Set(prev).add(senderId));
-    });
-    socket.on('stop-typing', ({ senderId }: { senderId: string }) => {
-      setTypingFrom(prev => {
-        const next = new Set(prev);
-        next.delete(senderId);
-        return next;
-      });
-    });
-
-    socket.on('messages-seen', ({ by }: { by: string }) => {
-      setMessagesByContact(prev => {
-        const list = prev[by];
-        if (!list) return prev;
-        return { ...prev, [by]: list.map(m => m.senderId === currentUserId ? { ...m, isRead: true } : m) };
-      });
-    });
-
-    // --- Appels (logique reprise, bugs de closure corrigés via refs) ---
-    socket.on('incoming-call', (data) => {
-      setIncomingCallData(data);
-      setCallType(data.isVideo ? 'video' : 'audio');
-      ringtoneRef.current?.play().catch(() => {});
-    });
-
-    socket.on('call-answered', async ({ answer }) => {
-      if (peerConnectionRef.current) {
-        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-        setIsCallingOut(false);
-        setInCall(true);
-        startCallTimer();
-      }
-    });
-
-    socket.on('ice-candidate', async ({ candidate }) => {
-      if (peerConnectionRef.current && candidate) {
-        try { await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
-      }
-    });
-
-    socket.on('call-ended', () => {
-      terminateCallState(false);
-    });
-
-    if (Notification && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
+  const memoizedAvatar = useMemo(() => {
+    if (userAvatarUrl) {
+      return <img src={userAvatarUrl} alt={user?.name || 'User'} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} />;
     }
+    if (user?.avatar) {
+      return <img src={getImageUrl(user.avatar)} alt={user?.name || 'User'} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} />;
+    }
+    return getInitials(user?.name || 'U');
+  }, [userAvatarUrl, user?.avatar, user?.name, getImageUrl]);
 
-    return () => { socket.disconnect(); };
-  }, [currentUserId]);
+  const isRequestPost = useCallback((product: ProductItem) => {
+    const type = String(product.type || '').toUpperCase();
+    const title = String(product.title || '').toUpperCase();
+    return type === 'REQUEST' || product.isDemande === true || title.includes('[DEMANDE]');
+  }, []);
 
-  const playNotificationSound = () => {
-    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
-    audio.volume = 0.5;
-    audio.play().catch(() => {});
-  };
+  const displayedProducts = useMemo(() => {
+    let list = featuredProducts;
+    if (postFilter !== 'ALL') {
+      list = list.filter(product => postFilter === 'REQUEST' ? isRequestPost(product) : !isRequestPost(product));
+    }
+    if (activeCategory) {
+      list = list.filter(product => {
+        const name = typeof product.category === 'object' && product.category !== null ? product.category.name : product.category;
+        return name === activeCategory;
+      });
+    }
+    return list;
+  }, [featuredProducts, postFilter, isRequestPost, activeCategory]);
 
-  const handleUnauthorized = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    navigate('/login');
-  };
-
-  const loadInitialData = async (token: string) => {
-    setLoading(true);
+  const shareProduct = async (product: ProductItem) => {
+    const id = product.id || product._id;
+    if (!id) return;
+    const url = `${window.location.origin}/products/${id}`;
     try {
-      const resUsers = await fetch(`${BACKEND_URL}/api/messages/users/available`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const dataUsers = await resUsers.json();
-      let usersList: ContactUser[] = [];
-      if (dataUsers.success && Array.isArray(dataUsers.data)) {
-        usersList = dataUsers.data;
-        setAvailableUsers(usersList);
-      }
-
-      const resContacts = await fetch(`${BACKEND_URL}/api/messages/contacts/accepted`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (resContacts.status === 401) { handleUnauthorized(); return; }
-
-      const dataContacts = await resContacts.json();
-      const rawContactsList = dataContacts.success && Array.isArray(dataContacts.data) ? dataContacts.data : [];
-      const contactsList = rawContactsList.map((contact: ContactUser) => {
-        const matchingUser = usersList.find((u) => u.id === contact.id);
-        return { ...contact, avatar: contact.avatar || matchingUser?.avatar || '' };
-      });
-
-      setAcceptedContacts(contactsList);
-
-      // Charge en une fois le dernier message de chaque conversation, pour le tri et l'aperçu
-      const resAll = await fetch(`${BACKEND_URL}/api/messages`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const dataAll = await resAll.json();
-      if (dataAll.success && Array.isArray(dataAll.data)) {
-        const allMsgs: Message[] = dataAll.data;
-        const byContact: Record<string, Message[]> = {};
-        const lastByContact: Record<string, Message> = {};
-        const unread: Record<string, number> = {};
-
-        let currentUid = '';
-        try { currentUid = JSON.parse(localStorage.getItem('user') || '{}').id; } catch {}
-
-        allMsgs.forEach((m) => {
-          const otherId = m.senderId === currentUid ? m.receiverId : m.senderId;
-          if (!byContact[otherId]) byContact[otherId] = [];
-          byContact[otherId].push(m);
-          if (!lastByContact[otherId] || new Date(m.createdAt) > new Date(lastByContact[otherId].createdAt)) {
-            lastByContact[otherId] = m;
-          }
-          if (m.receiverId === currentUid && !m.isRead) {
-            unread[otherId] = (unread[otherId] || 0) + 1;
-          }
-        });
-
-        setMessagesByContact(byContact);
-        setLastMessageByContact(lastByContact);
-        setUnreadByContact(unread);
-
-        // Tri de la liste par dernier message
-        setAcceptedContacts(prev => {
-          const sorted = [...prev].sort((a, b) => {
-            const ta = lastByContact[a.id] ? new Date(lastByContact[a.id].createdAt).getTime() : 0;
-            const tb = lastByContact[b.id] ? new Date(lastByContact[b.id].createdAt).getTime() : 0;
-            return tb - ta;
-          });
-          return sorted;
-        });
-      }
-
-      if (contactsList.length > 0 && window.innerWidth >= 768) {
-        setSelectedContact(contactsList[0]);
-      }
-
-      // NOUVEAU : si on arrive depuis "Contacter le vendeur" (?to=<id>), on ouvre
-      // directement la conversation avec ce vendeur — sans exiger qu'il soit déjà
-      // un "contact accepté" au préalable (sinon le lien resterait bloqué en pratique).
-      const targetId = pendingTargetIdRef.current;
-      if (targetId) {
-        pendingTargetIdRef.current = null; // on ne le rejoue pas si l'utilisateur navigue ensuite dans la page
-
-        const existingContact = contactsList.find((c: ContactUser) => c.id === targetId);
-        const availableMatch = usersList.find((u) => u.id === targetId);
-
-        if (existingContact) {
-          openConversation(existingContact);
-        } else if (availableMatch) {
-          // Vendeur pas encore "contact accepté" : on ouvre quand même la discussion
-          // (les messages passent par le socket, indépendamment du statut de la demande de contact),
-          // et on envoie en parallèle une demande de contact pour qu'il apparaisse ensuite dans "Contacts".
-          const contactCandidate: ContactUser = { ...availableMatch };
-          setAcceptedContacts(prev => (prev.some(c => c.id === contactCandidate.id) ? prev : [contactCandidate, ...prev]));
-          openConversation(contactCandidate);
-          if (availableMatch.contactStatus !== 'PENDING' && availableMatch.contactStatus !== 'ACCEPTED') {
-            handleSendContactRequest(targetId);
-          }
-        } else {
-          setError("Impossible de démarrer la conversation avec ce vendeur (utilisateur introuvable).");
-        }
-
-        // On nettoie l'URL pour ne pas rejouer l'ouverture si la page est rafraîchie/revisitée
-        setSearchParams((prev) => {
-          const next = new URLSearchParams(prev);
-          next.delete('to');
-          return next;
-        }, { replace: true });
-      }
-    } catch (err: any) {
-      setError(err.message || "Erreur lors du chargement des données.");
-    } finally {
-      setLoading(false);
-    }
+      if (navigator.share) await navigator.share({ title: product.title, text: `Découvrez ${product.title} sur CBF SOKO`, url });
+      else await navigator.clipboard.writeText(url);
+    } catch {}
+    setOpenProductMenu(null);
   };
 
-  const openConversation = (contact: ContactUser) => {
-    setSelectedContact(contact);
-    setShowMobileChat(true);
-    setUnreadByContact(prev => ({ ...prev, [contact.id]: 0 }));
-    socketRef.current?.emit('message-seen', { otherUserId: contact.id });
-  };
+  const legalContent = {
+    terms: { title: 'Conditions d’utilisation', icon: FileText, sections: [
+      ['Utilisation du service', 'L’utilisation de CBF SOKO implique le respect des règles de publication, de communication et de transaction applicables sur la plateforme.'],
+      ['Publications', 'Chaque utilisateur est responsable des informations, images, prix et descriptions qu’il publie. Les contenus frauduleux, trompeurs ou illicites sont interdits.'],
+      ['Transactions', 'Les conditions d’achat, de vente, de livraison et de paiement doivent être clairement respectées par les parties concernées.'],
+      ['Compte utilisateur', 'L’utilisateur doit conserver ses informations de connexion confidentielles et signaler toute utilisation non autorisée de son compte.']
+    ]},
+    privacy: { title: 'Politique de confidentialité', icon: ShieldCheck, sections: [
+      ['Données collectées', 'CBF SOKO peut traiter les informations nécessaires à la création du compte, à la publication d’annonces, à la messagerie et au suivi des opérations.'],
+      ['Utilisation', 'Les données sont utilisées pour fournir les fonctionnalités demandées, sécuriser les comptes et améliorer le fonctionnement du service.'],
+      ['Partage', 'Les informations ne doivent être communiquées qu’aux acteurs nécessaires au fonctionnement d’une opération ou lorsque la loi l’exige.'],
+      ['Sécurité', 'Des mesures techniques et organisationnelles sont mises en place pour protéger les informations contre les accès non autorisés.']
+    ]},
+    mentions: { title: 'Mentions légales', icon: Scale, sections: [
+      ['Éditeur', 'CBF SOKO — plateforme numérique destinée à faciliter les échanges entre utilisateurs à Bukavu et dans sa région.'],
+      ['Siège et zone de service', 'Bukavu, République Démocratique du Congo.'],
+      ['Responsabilité', 'Les utilisateurs restent responsables des contenus et informations qu’ils publient sur la plateforme.'],
+      ['Contact', 'Pour toute question concernant le service, utilisez les moyens de contact officiellement indiqués par CBF SOKO.']
+    ]},
+    cookies: { title: 'Politique relative aux cookies', icon: Cookie, sections: [
+      ['Fonctionnement', 'Des éléments de stockage local peuvent être utilisés pour conserver certaines préférences de l’utilisateur, notamment le thème choisi.'],
+      ['Préférences', 'Les préférences enregistrées dans le navigateur permettent de retrouver une configuration cohérente lors des visites suivantes.'],
+      ['Gestion', 'L’utilisateur peut gérer ou supprimer les données stockées localement depuis les paramètres de son navigateur.']
+    ]},
+    community: { title: 'Règles de la communauté', icon: Info, sections: [
+      ['Respect', 'Les échanges doivent rester respectueux. Les insultes, menaces, harcèlements et comportements abusifs ne sont pas autorisés.'],
+      ['Annonces', 'Les publications doivent être exactes, compréhensibles et conformes aux règles de la plateforme.'],
+      ['Fraude et abus', 'Les tentatives de fraude, les fausses informations et l’utilisation abusive des comptes peuvent entraîner des mesures de restriction.']
+    ]}
+  } as const;
 
-  const handleSendContactRequest = async (targetUserId: string) => {
-    setError('');
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${BACKEND_URL}/api/messages/request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ receiverId: targetUserId })
-      });
-      const data = await response.json();
-      if (data.success) {
-        setAvailableUsers(prev => prev.map(u => u.id === targetUserId ? { ...u, contactStatus: 'PENDING' } : u));
-      } else {
-        setError(data.message || "Erreur lors de l'envoi.");
-      }
-    } catch {
-      setError("Erreur réseau.");
-    }
-  };
-
-  // ============ ENVOI INSTANTANÉ VIA SOCKET (optimistic UI) ============
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    if (!newMessage.trim() || !selectedContact?.id || !socketRef.current) return;
-
-    const tempId = `temp-${Date.now()}`;
-    const optimisticMsg: Message = {
-      id: tempId,
-      tempId,
-      senderId: currentUserId,
-      receiverId: selectedContact.id,
-      content: newMessage,
-      createdAt: new Date().toISOString(),
-      isRead: false,
-      pending: true,
-    };
-
-    setMessagesByContact(prev => ({
-      ...prev,
-      [selectedContact.id]: [...(prev[selectedContact.id] || []), optimisticMsg]
-    }));
-    setLastMessageByContact(prev => ({ ...prev, [selectedContact.id]: optimisticMsg }));
-    setAcceptedContacts(prev => {
-      const idx = prev.findIndex(c => c.id === selectedContact.id);
-      if (idx <= 0) return prev;
-      const copy = [...prev];
-      const [item] = copy.splice(idx, 1);
-      return [item, ...copy];
-    });
-
-    socketRef.current.emit('send-message', {
-      receiverId: selectedContact.id,
-      content: newMessage,
-      tempId,
-    });
-
-    socketRef.current.emit('stop-typing', { receiverId: selectedContact.id });
-    setNewMessage('');
-    setShowEmojiPicker(false);
-  };
-
-  // Indicateur de frappe : émis pendant que l'utilisateur tape, avec anti-rebond
-  const typingTimeoutRef = useRef<any>(null);
-  const handleTyping = (value: string) => {
-    setNewMessage(value);
-    if (!selectedContact?.id || !socketRef.current) return;
-
-    socketRef.current.emit('typing', { receiverId: selectedContact.id });
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => {
-      socketRef.current?.emit('stop-typing', { receiverId: selectedContact.id });
-    }, 2000);
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedContact?.id) return;
-    setError('');
-    try {
-      const token = localStorage.getItem('token');
-      const formData = new FormData();
-      formData.append('receiverId', selectedContact.id);
-      formData.append('media', file);
-
-      const response = await fetch(`${BACKEND_URL}/api/messages/media`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
-      });
-      const data = await response.json();
-      if (data.success && data.data) {
-        setMessagesByContact(prev => ({
-          ...prev,
-          [selectedContact.id]: [...(prev[selectedContact.id] || []), data.data]
-        }));
-      } else {
-        setError(data.message || "Erreur lors de l'envoi du fichier.");
-      }
-    } catch {
-      setError("Erreur réseau lors de l'envoi du fichier.");
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  const startRecording = async () => {
-    setError('');
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioChunksRef.current = [];
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data);
-      };
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(track => track.stop());
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await sendAudioFile(audioBlob);
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-      setRecordingTime(0);
-      recordTimerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
-    } catch {
-      setError("Impossible d'accéder au microphone.");
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      clearInterval(recordTimerRef.current);
-    }
-  };
-
-  const sendAudioFile = async (blob: Blob) => {
-    if (!selectedContact?.id) return;
-    try {
-      const token = localStorage.getItem('token');
-      const formData = new FormData();
-      formData.append('receiverId', selectedContact.id);
-      formData.append('media', blob, `voice-note-${Date.now()}.webm`);
-
-      const response = await fetch(`${BACKEND_URL}/api/messages/media`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
-      });
-      const data = await response.json();
-      if (data.success && data.data) {
-        setMessagesByContact(prev => ({
-          ...prev,
-          [selectedContact.id]: [...(prev[selectedContact.id] || []), data.data]
-        }));
-      } else {
-        setError(data.message || "Erreur envoi note vocale.");
-      }
-    } catch {
-      setError("Erreur réseau vocal.");
-    }
-  };
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-  };
-
-  const startCallTimer = () => {
-    setCallDuration(0);
-    callDurationRef.current = 0;
-    callTimerRef.current = setInterval(() => {
-      setCallDuration(prev => {
-        const next = prev + 1;
-        callDurationRef.current = next;
-        return next;
-      });
-    }, 1000);
-  };
-
-  const stopCallTimer = () => {
-    if (callTimerRef.current) {
-      clearInterval(callTimerRef.current);
-      callTimerRef.current = null;
-    }
-  };
-
-  const isMediaFile = (content: string) => {
-    return content.startsWith('uploads/') || content.includes('voice-note') || /\.(webm|mp3|wav|ogg|mp4|png|jpg|jpeg|pdf|docx)$/i.test(content);
-  };
-
-  const renderMessageContent = (content: string) => {
-    if (!isMediaFile(content)) {
-      return <p className="whitespace-pre-wrap break-words leading-relaxed">{content}</p>;
-    }
-    const fullUrl = `${BACKEND_URL}/${content}`;
-    const isImage = /\.(png|jpg|jpeg|gif|webp)$/i.test(content);
-    const isAudio = /\.(webm|mp3|wav|ogg)$/i.test(content) || content.includes('voice-note');
-
-    if (isImage) {
-      return (
-        <a href={fullUrl} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl">
-          <img src={fullUrl} alt="Média" className="max-w-[200px] sm:max-w-xs max-h-60 object-cover rounded-xl hover:opacity-95 transition" />
-        </a>
-      );
-    }
-    if (isAudio) {
-      return (
-        <div className="flex items-center gap-2 min-w-[180px] sm:min-w-[220px]">
-          <audio src={fullUrl} controls className="w-full h-9" />
+  // Contenu riche et détaillé sur l'historique, les créateurs, la mission, les services et garanties de CBF SOKO
+  const detailedServicesContent = (
+    <div className="flex flex-col gap-4 max-h-[420px] overflow-y-auto pr-1 text-left">
+      
+      {/* Historique & Origine */}
+      <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
+        <div className="w-14 h-14 rounded-lg bg-orange-600/10 text-orange-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <History className="w-4 h-4" />
         </div>
-      );
-    }
-    return (
-      <a href={fullUrl} target="_blank" rel="noopener noreferrer" className="underline font-semibold flex items-center gap-2 py-1">
-        <Paperclip className="w-4 h-4" /> Fichier joint
-      </a>
-    );
-  };
-
-  // ============ APPELS WEBRTC (logique conservée, bugs corrigés) ============
-  const startCall = async (isVideo: boolean) => {
-    if (!selectedContact?.id) return;
-    setIsCallingOut(true);
-    setCallType(isVideo ? 'video' : 'audio');
-    callTypeRef.current = isVideo ? 'video' : 'audio';
-
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]
-    });
-    peerConnectionRef.current = pc;
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-      pc.ontrack = (event) => {
-        setIsCallingOut(false);
-        setInCall(true);
-        startCallTimer();
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
-      };
-      pc.onicecandidate = (event) => {
-        if (event.candidate && socketRef.current) {
-          socketRef.current.emit('ice-candidate', { to: selectedContact.id, candidate: event.candidate });
-        }
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      socketRef.current?.emit('call-user', { to: selectedContact.id, offer, from: currentUserId, isVideo });
-    } catch {
-      setError("Erreur d'accès à la caméra ou au micro pour l'appel.");
-      terminateCallState(false);
-    }
-  };
-
-  const stopRingtone = () => {
-    if (ringtoneRef.current) {
-      ringtoneRef.current.pause();
-      ringtoneRef.current.currentTime = 0;
-    }
-  };
-
-  const acceptIncomingCall = async () => {
-    stopRingtone();
-    if (!incomingCallData) return;
-    setInCall(true);
-    const isVideoCall = incomingCallData.isVideo;
-    setCallType(isVideoCall ? 'video' : 'audio');
-    callTypeRef.current = isVideoCall ? 'video' : 'audio';
-    startCallTimer();
-
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]
-    });
-    peerConnectionRef.current = pc;
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideoCall });
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-      pc.ontrack = (event) => {
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
-      };
-      pc.onicecandidate = (event) => {
-        if (event.candidate && socketRef.current) {
-          socketRef.current.emit('ice-candidate', { to: incomingCallData.from, candidate: event.candidate });
-        }
-      };
-
-      await pc.setRemoteDescription(new RTCSessionDescription(incomingCallData.offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      socketRef.current?.emit('make-answer', { to: incomingCallData.from, answer });
-      setIncomingCallData(null);
-    } catch {
-      setError("Impossible d'établir l'appel.");
-      terminateCallState(false);
-    }
-  };
-
-  const rejectIncomingCall = () => {
-    stopRingtone();
-    if (incomingCallData?.from && socketRef.current) {
-      socketRef.current.emit('end-call', { to: incomingCallData.from });
-    }
-    setIncomingCallData(null);
-  };
-
-  // Corrigé : lit callDurationRef/callTypeRef/selectedContactRef, toujours à jour
-  // même appelé depuis le listener socket enregistré une seule fois.
-  const terminateCallState = (sendSummary = true) => {
-    stopRingtone();
-    stopCallTimer();
-
-    const finalDuration = callDurationRef.current;
-    const finalType = callTypeRef.current;
-    const contact = selectedContactRef.current;
-
-    if (sendSummary && finalDuration > 0 && contact?.id && socketRef.current) {
-      const mins = Math.floor(finalDuration / 60);
-      const secs = finalDuration % 60;
-      const timeStr = mins > 0 ? `${mins} min ${secs} s` : `${secs} s`;
-      const summaryText = `📞 Appel ${finalType === 'video' ? 'vidéo' : 'audio'} terminé (${timeStr})`;
-
-      const tempId = `temp-call-${Date.now()}`;
-      socketRef.current.emit('send-message', { receiverId: contact.id, content: summaryText, tempId });
-    }
-
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    setInCall(false);
-    setIsCallingOut(false);
-    setCallDuration(0);
-    callDurationRef.current = 0;
-  };
-
-  const endCall = () => {
-    if (selectedContact?.id && socketRef.current) {
-      socketRef.current.emit('end-call', { to: selectedContact.id });
-    }
-    terminateCallState(true);
-  };
-
-  // ============ Filtrage / recherche ============
-  const filteredContacts = useMemo(() => {
-    if (!searchQuery.trim()) return acceptedContacts;
-    return acceptedContacts.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  }, [acceptedContacts, searchQuery]);
-
-  const filteredAvailableUsers = useMemo(() => {
-    const base = availableUsers.filter(u => !acceptedContacts.some(c => c.id === u.id));
-    if (!searchQuery.trim()) return base;
-    return base.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  }, [availableUsers, acceptedContacts, searchQuery]);
-
-  const isTypingInSelected = selectedContact ? typingFrom.has(selectedContact.id) : false;
-
-  if (loading) {
-    return (
-      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-neutral-950 text-white' : 'bg-neutral-50 text-neutral-900'}`}>
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs text-neutral-500">Chargement des messages...</span>
+        <div>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-500">Histoire & Origine de CBF SOKO</h5>
+          <p className="text-[11px] text-neutral-300 leading-relaxed">
+            Fondée à Bukavu (République Démocratique du Congo) par des entrepreneurs locaux visionnaires passionnés de tech, CBF SOKO est née du besoin urgent de digitaliser le commerce de proximité et de fluidifier les transactions entre acheteurs et vendeurs au Kivu avec un outil ultra-rapide, fiable et sécurisé.
+          </p>
         </div>
       </div>
-    );
-  }
+
+      {/* Vision & Créateurs */}
+      <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
+        <div className="w-14 h-14 rounded-lg bg-orange-600/10 text-orange-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Target className="w-4 h-4" />
+        </div>
+        <div>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-500">Nos Créateurs & Mission</h5>
+          <p className="text-[11px] text-neutral-300 leading-relaxed">
+            Imaginée par une équipe d'ingénieurs et développeurs congolais, notre mission est de connecter directement les boutiques physiques, marchés locaux et particuliers de la région pour booster l'économie numérique locale, en éliminant les intermédiaires superflus.
+          </p>
+        </div>
+      </div>
+
+      {/* Services & Multidevises */}
+      <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
+        <div className="w-14 h-14 rounded-lg bg-orange-600/10 text-orange-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Store className="w-4 h-4" />
+        </div>
+        <div>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-500">Nos Services Principaux</h5>
+          <p className="text-[11px] text-neutral-300 leading-relaxed">
+            Publication d'annonces instantanée par photo 📷, gestion de boutiques vérifiées, conversion automatique des prix en Dollars ($) et Francs Congolais (CDF), et messagerie interne en temps réel.
+          </p>
+        </div>
+      </div>
+
+      {/* Sécurité, Livraison & Garantie */}
+      <div className="flex items-start gap-3 pb-3 border-b border-neutral-700/50">
+        <div className="w-14 h-14 rounded-lg bg-orange-600/10 text-orange-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <ShieldCheck className="w-4 h-4" />
+        </div>
+        <div>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-500">Garantie & Paiements Sécurisés</h5>
+          <p className="text-[11px] text-neutral-300 leading-relaxed">
+            Chaque transaction est protégée par notre portefeuille électronique intégré. Les fonds restent sécurisés jusqu'à la livraison effective de votre colis par nos coursiers partenaires à Bukavu (Ibanda, Kadutu, Bagira).
+          </p>
+        </div>
+      </div>
+
+      {/* Support 7j/7 */}
+      <div className="flex items-start gap-3">
+        <div className="w-14 h-14 rounded-lg bg-orange-600/10 text-orange-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Headphones className="w-4 h-4" />
+        </div>
+        <div>
+          <h5 className="font-extrabold text-xs mb-1 text-orange-500">Support Client 7j/7</h5>
+          <p className="text-[11px] text-neutral-300 leading-relaxed">
+            Une assistance dédiée et réactive disponible à tout moment pour résoudre vos litiges, répondre à vos questions et vous accompagner dans vos achats et ventes quotidiens.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  );
+
+  // --- NOUVEAU : contenu des slides de la bannière promo (façon affiche Airtel) ---
+  const promoSlides = [
+    {
+      icon: Store,
+      badge: 'OFFICIEL',
+      title: 'Devenez vendeur ou agent CBF',
+      subtitle: "Gagnez de l'argent en vendant les produits officiels CBF.",
+      cta: 'Nos produits',
+      link: '/nos-produits',
+      gradient: 'from-orange-600 via-orange-700 to-red-700',
+    },
+    {
+      icon: Award,
+      badge: 'NOUVEAU',
+      title: 'Boutique officielle CBF SOKO',
+      subtitle: 'Des articles authentiques, garantis et livrés à Bukavu.',
+      cta: 'Voir la boutique',
+      link: '/boutique',
+      gradient: 'from-purple-700 via-fuchsia-700 to-pink-600',
+    },
+    {
+      icon: Wallet,
+      badge: 'RAPIDE',
+      title: 'CBF Wallet : payez en un clic',
+      subtitle: 'Rechargez, payez et recevez vos gains instantanément.',
+      cta: 'Ouvrir mon wallet',
+      link: '/wallet',
+      gradient: 'from-blue-700 via-indigo-700 to-violet-700',
+    },
+    {
+      icon: Zap,
+      badge: 'GRATUIT',
+      title: 'Vendez en 2 minutes',
+      subtitle: 'Publiez votre premier produit gratuitement dès maintenant.',
+      cta: 'Publier un produit',
+      link: '/create-product',
+      gradient: 'from-emerald-600 via-teal-600 to-green-700',
+    },
+  ];
+  const activePromo = promoSlides[promoIndex];
+
+  // Défilement automatique toutes les 5 secondes, avec relance à chaque changement (auto ou manuel)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPromoDirection(1);
+      setPromoIndex((prev) => (prev + 1) % promoSlides.length);
+    }, 5000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promoIndex]);
+
+  const handlePromoDotClick = (i: number) => {
+    setPromoDirection(i > promoIndex ? 1 : -1);
+    setPromoIndex(i);
+  };
+
+  const promoSlideVariants = {
+    enter: (direction: number) => ({ x: direction > 0 ? 70 : -70, opacity: 0, scale: 0.94 }),
+    center: { x: 0, opacity: 1, scale: 1 },
+    exit: (direction: number) => ({ x: direction > 0 ? -70 : 70, opacity: 0, scale: 0.94 }),
+  };
 
   return (
-    <div className={`h-screen flex flex-col transition-colors duration-300 ${darkMode ? 'bg-neutral-950 text-white' : 'bg-neutral-50 text-neutral-900'}`}>
-
+    // Layout en flex-col : le footer reste en bas de l'écran si peu de contenu,
+    // et suit le scroll normalement dès que le contenu (produits) dépasse la hauteur de l'écran.
+    <div className={`min-h-screen flex flex-col transition-colors duration-300 relative ${darkMode ? 'bg-neutral-950 text-white' : 'bg-neutral-50 text-neutral-900'}`}>
+      
       {/* HEADER */}
-      <header className={`flex-shrink-0 border-b px-4 py-3 flex items-center justify-between ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
-        <div className="flex items-center gap-2">
-          <Link to="/" className={`p-2 rounded-full transition ${darkMode ? 'hover:bg-neutral-800 text-neutral-300' : 'hover:bg-neutral-100 text-neutral-700'}`}>
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <h1 className="text-base font-extrabold">Messages</h1>
-        </div>
-        <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-full border transition ${darkMode ? 'bg-neutral-950 border-neutral-800 text-yellow-400' : 'bg-white border-neutral-300 text-neutral-800'}`}>
-          {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4 text-orange-600" />}
-        </button>
-      </header>
+      <header className={`sticky top-0 z-50 border-b px-2 sm:px-6 lg:px-8 py-2.5 transition-colors shadow-sm ${
+        darkMode ? 'bg-neutral-900/95 border-neutral-800 backdrop-blur-md' : 'bg-white/95 border-neutral-200 backdrop-blur-md'
+      }`}>
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-1.5 sm:gap-4">
+          
+          {/* Logo / Nom (Desktop) & Bouton '?' / Caméra (Mobile) */}
+          <div className="flex items-center gap-1.5 sm:gap-3 flex-shrink-0 relative" ref={servicesDropdownRef}>
+            <Link to="/" className="hidden sm:flex items-center gap-2">
+              <div className="w-9 h-9 sm:w-11 sm:h-11 bg-orange-700 rounded-xl flex items-center justify-center overflow-hidden shadow-md shadow-orange-700/30 border border-orange-600 relative">
+                <img 
+                  src={LOGO_URL} 
+                  alt="CBF SOKO Logo" 
+                  className="w-full h-full object-cover" 
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = 'none';
+                  }} 
+                />
+              </div>
+              <div>
+                <span className="font-extrabold text-sm sm:text-base tracking-tight block leading-none">CBFSOKO</span>
+                <span className="text-[9px] text-orange-600 font-bold tracking-widest uppercase flex items-center gap-0.5">
+                  <MapPin className="w-2.5 h-2.5" /> Bukavu
+                </span>
+              </div>
+            </Link>
 
-      {error && (
-        <div className="flex-shrink-0 bg-red-950/40 border-b border-red-900 text-red-400 text-[11px] font-semibold px-4 py-2 flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError('')}><X className="w-3.5 h-3.5" /></button>
-        </div>
-      )}
+            {/* Petit bouton '?' à gauche (cliquable, ouvre la modale ou le menu déroulant complet) */}
+            <button 
+              onClick={() => {
+                setShowMobileServicesModal(true);
+                setShowServicesDropdown(prev => !prev);
+              }}
+              className="w-8 h-8 rounded-full bg-orange-700/20 border border-orange-600 text-orange-600 flex items-center justify-center font-bold text-xs cursor-pointer hover:bg-orange-700 hover:text-white transition shadow-sm"
+              title="À propos, Historique, Nos Services & Garanties"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
 
-      {/* CORPS : 2 panneaux */}
-      <div className="flex-1 flex overflow-hidden">
+            {/* SUR MOBILE : Icône Notification + Panier placées à gauche de la recherche */}
+            <button 
+              onClick={handleOpenNotifications}
+              className="sm:hidden p-2 rounded-xl bg-neutral-800 border border-neutral-700 text-orange-600 flex items-center justify-center cursor-pointer hover:bg-neutral-700 transition relative"
+              title="Notifications"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadNotifsCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
+                  {unreadNotifsCount}
+                </span>
+              )}
+            </button>
 
-        {/* LISTE (panneau gauche) */}
-        <div className={`${showMobileChat ? 'hidden' : 'flex'} md:flex flex-col w-full md:w-[360px] flex-shrink-0 border-r ${darkMode ? 'border-neutral-800' : 'border-neutral-200'}`}>
+            {/* NOUVEAU : Panier (mobile) */}
+            <button 
+              onClick={() => handleProtectedAction('/cart')}
+              className="sm:hidden p-2 rounded-xl bg-neutral-800 border border-neutral-700 text-orange-600 flex items-center justify-center cursor-pointer hover:bg-neutral-700 transition relative"
+              title="Panier"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              {cartCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full">
+                  {cartCount}
+                </span>
+              )}
+            </button>
 
-          {/* Recherche */}
-          <div className="p-3 flex-shrink-0">
-            <div className={`flex items-center gap-2 rounded-full border px-3 py-2 ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-300'}`}>
-              <Search className="w-3.5 h-3.5 text-neutral-500 flex-shrink-0" />
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Rechercher..."
-                className="w-full bg-transparent text-xs outline-none placeholder-neutral-500"
-              />
+            {/* Menu Déroulant DESKTOP pour les services et l'historique complet */}
+            <div className="relative hidden md:block">
+              <button 
+                onClick={() => setShowServicesDropdown(!showServicesDropdown)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition cursor-pointer ${
+                  darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-600 text-neutral-300' : 'bg-neutral-100 border-neutral-200 hover:border-orange-600 text-neutral-700'
+                }`}
+              >
+                <span>À propos de CBF SOKO</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showServicesDropdown ? 'rotate-180 text-orange-600' : ''}`} />
+              </button>
+
+              {showServicesDropdown && (
+                <div className={`absolute top-full left-0 mt-2 w-[420px] p-5 rounded-2xl border shadow-2xl z-50 transition-all ${
+                  darkMode ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-200 text-neutral-900'
+                }`}>
+                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-neutral-700/50">
+                    <div className="flex items-center gap-2">
+                      <div className="w-14 h-14 rounded-lg bg-orange-700 text-white flex items-center justify-center font-bold">
+                        <Sparkles className="w-3.5 h-3.5" />
+                      </div>
+                      <h4 className="font-extrabold text-xs text-orange-600">Histoire, Créateurs & Services</h4>
+                    </div>
+                    <button onClick={() => setShowServicesDropdown(false)} className="text-neutral-400 hover:text-white cursor-pointer p-1">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {detailedServicesContent}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Onglets Chats / Personnes */}
-          <div className={`flex flex-shrink-0 px-3 gap-1 border-b ${darkMode ? 'border-neutral-800' : 'border-neutral-200'}`}>
-            <button
-              onClick={() => setActiveBottomTab('chats')}
-              className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-wide border-b-2 transition ${
-                activeBottomTab === 'chats' ? 'border-orange-500 text-orange-500' : 'border-transparent text-neutral-500'
-              }`}
-            >
-              Discussions
-            </button>
-            <button
-              onClick={() => setActiveBottomTab('people')}
-              className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-wide border-b-2 transition ${
-                activeBottomTab === 'people' ? 'border-orange-500 text-orange-500' : 'border-transparent text-neutral-500'
-              }`}
-            >
-              Contacts
-            </button>
-          </div>
-
-          {/* Liste défilante */}
-          <div className="flex-1 overflow-y-auto">
-            {activeBottomTab === 'chats' ? (
-              filteredContacts.length === 0 ? (
-                <div className="text-center py-10 px-4 text-xs text-neutral-500">Aucune conversation. Ajoutez un contact dans l'onglet "Contacts".</div>
-              ) : (
-                filteredContacts.map((contact) => {
-                  const lastMsg = lastMessageByContact[contact.id];
-                  const unread = unreadByContact[contact.id] || 0;
-                  const isOnline = onlineUserIds.has(contact.id);
-                  const isTypingHere = typingFrom.has(contact.id);
-                  const isSelected = selectedContact?.id === contact.id;
-
-                  let previewText = 'Démarrez la conversation';
-                  if (isTypingHere) previewText = 'En train d\'écrire...';
-                  else if (lastMsg) previewText = isMediaFile(lastMsg.content) ? '📎 Fichier joint' : lastMsg.content;
-
-                  return (
-                    <button
-                      key={contact.id}
-                      onClick={() => openConversation(contact)}
-                      className={`w-full flex items-center gap-3 px-3 py-3 transition text-left ${
-                        isSelected ? (darkMode ? 'bg-neutral-900' : 'bg-orange-50') : (darkMode ? 'hover:bg-neutral-900/60' : 'hover:bg-neutral-100')
-                      }`}
+          {/* Modale mobile pour l'historique, créateurs, services et garanties */}
+          <AnimatePresence>
+            {showMobileServicesModal && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowMobileServicesModal(false)}
+                className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:hidden"
+              >
+                <motion.div 
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.9, y: 20 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`w-full max-w-sm p-5 rounded-2xl border relative shadow-2xl ${darkMode ? 'bg-neutral-900 border-neutral-800 text-white' : 'bg-white border-neutral-200 text-neutral-900'}`}
+                >
+                  <div className="flex justify-between items-center mb-4 pb-2 border-b border-neutral-800">
+                    <h3 className="font-extrabold text-xs text-orange-600 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4" /> Histoire & Infos CBF SOKO
+                    </h3>
+                    <button 
+                      onClick={() => setShowMobileServicesModal(false)} 
+                      className="p-1 rounded-lg bg-neutral-800 text-neutral-300 hover:text-white cursor-pointer"
                     >
-                      <div className="relative flex-shrink-0">
-                        <div className="w-11 h-11 rounded-full bg-orange-600 text-white font-bold text-xs flex items-center justify-center overflow-hidden">
-                          {contact.avatar ? (
-                            <img src={getAvatarUrl(contact.avatar)} alt={contact.name} className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }} />
-                          ) : getInitials(contact.name)}
-                        </div>
-                        {isOnline && (
-                          <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2 ${darkMode ? 'border-neutral-950' : 'border-white'}`} />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-sm truncate">{contact.name}</span>
-                          {lastMsg && <span className="text-[10px] text-neutral-500 flex-shrink-0">{new Date(lastMsg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>}
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={`text-[11px] truncate ${isTypingHere ? 'text-orange-500 font-semibold' : 'text-neutral-500'}`}>{previewText}</span>
-                          {unread > 0 && (
-                            <span className="bg-orange-600 text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0">{unread}</span>
-                          )}
-                        </div>
-                      </div>
+                      <X className="w-4 h-4" />
                     </button>
-                  );
-                })
-              )
-            ) : (
-              filteredAvailableUsers.length === 0 ? (
-                <div className="text-center py-10 px-4 text-xs text-neutral-500">Aucun autre utilisateur disponible.</div>
-              ) : (
-                filteredAvailableUsers.map((u) => (
-                  <div key={u.id} className={`flex items-center gap-3 px-3 py-3 ${darkMode ? 'hover:bg-neutral-900/60' : 'hover:bg-neutral-100'}`}>
-                    <div className="w-11 h-11 rounded-full bg-neutral-700 text-white font-bold text-xs flex items-center justify-center overflow-hidden flex-shrink-0">
-                      {u.avatar ? <img src={getAvatarUrl(u.avatar)} alt={u.name} className="w-full h-full object-cover" /> : getInitials(u.name)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="font-bold text-sm truncate block">{u.name}</span>
-                      <span className="text-[11px] text-neutral-500 truncate block">{u.role === 'SUPER_ADMIN' ? 'Support CBF SOKO' : u.email}</span>
-                    </div>
-                    {u.contactStatus === 'PENDING' ? (
-                      <span className="text-[10px] font-bold text-neutral-500 flex-shrink-0">En attente</span>
-                    ) : (
-                      <button
-                        onClick={() => handleSendContactRequest(u.id)}
-                        className="p-2 rounded-full bg-orange-600/10 text-orange-500 hover:bg-orange-600 hover:text-white transition flex-shrink-0"
-                        title="Ajouter"
-                      >
-                        <UserPlus className="w-4 h-4" />
-                      </button>
-                    )}
                   </div>
-                ))
-              )
+                  {detailedServicesContent}
+                </motion.div>
+              </motion.div>
             )}
+          </AnimatePresence>
+
+          {/* Barre de recherche au milieu */}
+          <form onSubmit={handleSearch} className="flex-1 max-w-lg min-w-0 mx-1 sm:mx-4">
+            <div className={`flex w-full items-center rounded-full border overflow-hidden transition ${
+              darkMode ? 'bg-neutral-950 border-neutral-800 focus-within:border-orange-600' : 'bg-neutral-100 border-neutral-300 focus-within:border-orange-600'
+            }`}>
+              <input 
+                type="text" 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Rechercher un produit..." 
+                className="w-full bg-transparent px-3 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-sm outline-none placeholder-neutral-500 truncate"
+              />
+              <button type="submit" className="bg-orange-700 hover:bg-orange-800 px-3 sm:px-4 py-1.5 sm:py-2 text-white transition flex items-center justify-center cursor-pointer flex-shrink-0">
+                <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </button>
+            </div>
+          </form>
+
+          {/* Actions Droite */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
+            
+            <button 
+              onClick={() => handleProtectedAction('/orders')}
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-2 rounded-full border text-xs font-bold transition cursor-pointer relative ${
+                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-600 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-600 text-neutral-700'
+              }`}
+            >
+              <Package className="w-4 h-4 text-orange-600" />
+              <span>Commandes</span>
+              {ordersCount > 0 && (
+                <span className="bg-orange-700 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
+                  {ordersCount}
+                </span>
+              )}
+            </button>
+
+            {/* NOUVEAU : Panier (desktop) */}
+            <button 
+              onClick={() => handleProtectedAction('/cart')}
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-2 rounded-full border text-xs font-bold transition cursor-pointer relative ${
+                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-600 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-600 text-neutral-700'
+              }`}
+              title="Panier"
+            >
+              <ShoppingCart className="w-4 h-4 text-orange-600" />
+              <span>Panier</span>
+              {cartCount > 0 && (
+                <span className="bg-red-600 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
+                  {cartCount}
+                </span>
+              )}
+            </button>
+
+            <button 
+              onClick={handleOpenMessages}
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-2 rounded-full border text-xs font-bold transition cursor-pointer relative ${
+                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-600 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-600 text-neutral-700'
+              }`}
+              title="Messages"
+            >
+              <MessageSquare className="w-4 h-4 text-orange-600" />
+              <span>Messages</span>
+              {unreadMessagesCount > 0 && (
+                <span className="bg-red-600 text-white text-[10px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
+                  {unreadMessagesCount}
+                </span>
+              )}
+            </button>
+
+            <button 
+              onClick={handleOpenNotifications}
+              className={`hidden md:flex items-center p-2 rounded-full border transition cursor-pointer relative ${
+                darkMode ? 'bg-neutral-950 border-neutral-800 hover:border-orange-600 text-neutral-300' : 'bg-white border-neutral-300 hover:border-orange-600 text-neutral-700'
+              }`}
+              title="Notifications"
+            >
+              <Bell className="w-4 h-4 text-orange-600" />
+              {unreadNotifsCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
+                  {unreadNotifsCount}
+                </span>
+              )}
+            </button>
+
+            <button 
+              onClick={() => handleProtectedAction('/create-product')}
+              className="hidden sm:flex items-center gap-1 bg-orange-700 hover:bg-orange-800 text-white font-bold text-xs px-4 py-2 rounded-full transition shadow-md shadow-orange-700/20 cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Vendre</span>
+            </button>
+
+            {/* Profil utilisateur à droite */}
+            {token ? (
+              <div className="flex items-center gap-1.5">
+                <button 
+                  onClick={() => handleProtectedAction('/wallet')}
+                  className={`flex items-center gap-1.5 px-2 py-1.5 rounded-full border transition cursor-pointer ${
+                    darkMode ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-300 text-neutral-900'
+                  }`}
+                  title="Profil & Portefeuille"
+                >
+                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-orange-700 text-white font-bold text-xs flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {memoizedAvatar}
+                  </div>
+                  <div className="hidden sm:flex flex-col text-left">
+                    <span className="text-[10px] text-neutral-400 leading-none flex items-center gap-1">Solde <Wallet className="w-3 h-3 text-orange-600" /></span>
+                    <span className="text-xs font-black text-orange-600">{user?.balance ?? 0} $</span>
+                  </div>
+                </button>
+                <button onClick={handleLogout} className="p-2 rounded-full bg-red-600/20 border border-red-800 text-red-400 hover:bg-red-600 hover:text-white transition cursor-pointer hidden sm:block" title="Se déconnecter">
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <Link to="/login" className="px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-bold bg-neutral-800 text-white transition hover:bg-neutral-700">Connexion</Link>
+                <Link to="/register" className="px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-bold bg-orange-700 text-white hidden sm:block transition hover:bg-orange-800">Inscription</Link>
+              </div>
+            )}
+
+            <div className="relative" ref={themeMenuRef}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowThemeMenu(prev => !prev); }}
+                className={`p-2 rounded-full border transition cursor-pointer ${darkMode ? 'bg-neutral-950 border-neutral-800 text-orange-500 hover:border-orange-600' : 'bg-white border-neutral-300 text-orange-700 hover:border-orange-600'}`}
+                title="Apparence"
+                aria-label="Choisir le thème"
+              >
+                <Palette className="w-4 h-4" />
+              </button>
+              {showThemeMenu && (
+                <div className={`absolute right-0 top-full mt-2 w-44 rounded-xl border shadow-2xl p-1.5 z-[70] ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+                  {[
+                    { key: 'system' as const, label: 'Automatique', icon: Sparkles },
+                    { key: 'light' as const, label: 'Clair', icon: Sun },
+                    { key: 'dark' as const, label: 'Sombre', icon: Moon },
+                  ].map(({ key, label, icon: Icon }) => (
+                    <button key={key} type="button" onClick={() => { setThemeMode(key); setShowThemeMenu(false); }} className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs transition ${themeMode === key ? 'bg-orange-700 text-white' : darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}>
+                      <span className="flex items-center gap-2"><Icon className="w-3.5 h-3.5" />{label}</span>
+                      {themeMode === key && <Check className="w-3.5 h-3.5" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
+      </header>
 
-        {/* CHAT (panneau droit) */}
-        <div className={`${showMobileChat ? 'flex' : 'hidden'} md:flex flex-col flex-1 min-w-0`}>
-          {!selectedContact ? (
-            <div className="flex-1 flex flex-col items-center justify-center gap-2 text-neutral-500">
-              <UserIcon className="w-10 h-10" />
-              <span className="text-xs">Sélectionnez une conversation</span>
+{/* BARRE D'ONGLETS MOBILE (Sans Accueil, Poster parfaitement centré) */}
+      <div className={`sm:hidden fixed bottom-0 left-0 right-0 z-50 border-t flex items-center justify-around py-2 px-1 backdrop-blur-md transition-colors ${
+        darkMode ? 'bg-neutral-900/95 border-neutral-800 text-neutral-400' : 'bg-white/95 border-neutral-200 text-neutral-600'
+      }`}>
+        <button 
+          onClick={() => handleProtectedAction('/orders')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/orders') ? 'text-orange-600 font-bold' : 'hover:text-orange-600'}`}
+        >
+          <Package className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Commandes</span>
+          {ordersCount > 0 && (
+            <span className="absolute top-0 right-3 bg-orange-700 text-white text-[9px] font-bold px-1 rounded-full">
+              {ordersCount}
+            </span>
+          )}
+        </button>
+
+        <Link
+          to="/boutique"
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition ${location.pathname.includes('/boutique') ? 'text-orange-600 font-bold' : 'hover:text-orange-600'}`}
+        >
+          <Store className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Boutique</span>
+        </Link>
+
+        {/* Bouton Poster centralisé au milieu */}
+        <div className="flex flex-col items-center justify-center flex-1 -mt-4">
+          <button 
+            onClick={() => handleProtectedAction('/create-product')}
+            className="w-12 h-12 bg-orange-700 hover:bg-orange-800 text-white rounded-full flex items-center justify-center shadow-lg shadow-orange-700/40 border-4 border-neutral-950 cursor-pointer transition transform active:scale-95"
+            title="Publier un article"
+          >
+            <Camera className="w-6 h-6" />
+          </button>
+          <span className="text-[10px] font-bold text-orange-600 mt-0.5">Poster</span>
+        </div>
+
+        <button 
+          onClick={handleOpenMessages}
+          className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/messages') ? 'text-orange-600 font-bold' : 'hover:text-orange-600'}`}
+        >
+          <MessageSquare className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Messages</span>
+          {unreadMessagesCount > 0 && (
+            <span className="absolute top-0 right-2 bg-red-600 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full animate-pulse">
+              {unreadMessagesCount}
+            </span>
+          )}
+        </button>
+
+        <button 
+          onClick={() => handleProtectedAction('/wallet')}
+          className={`flex flex-col items-center justify-center flex-1 py-1 relative bg-transparent border-none cursor-pointer text-inherit transition ${location.pathname.includes('/wallet') ? 'text-orange-600 font-bold' : 'hover:text-orange-600'}`}
+        >
+          <UserIcon className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Profil</span>
+        </button>
+      </div>
+
+      {/* CONTENU PRINCIPAL — flex-1 pour occuper l'espace restant et repousser le footer en bas */}
+      <main className="flex-1 pb-20 sm:pb-0">
+
+        {/* ============ NOUVEAU : REELS / VIDÉOS PRODUITS (30s max) ============ */}
+        <section className="max-w-7xl mx-auto px-2 sm:px-4 pt-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Video className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
+            <h2 className="text-sm sm:text-lg font-extrabold tracking-tight">Reels produits</h2>
+          </div>
+
+          {loadingReels ? (
+            <div className="flex gap-3 overflow-x-hidden pb-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className={`w-[110px] sm:w-[140px] aspect-[9/16] rounded-xl flex-shrink-0 animate-pulse ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
+              ))}
+            </div>
+          ) : displayedReels.length === 0 ? (
+            <div className={`text-center py-6 text-[11px] rounded-xl border ${darkMode ? 'text-neutral-500 border-neutral-800 bg-neutral-900/30' : 'text-neutral-500 border-neutral-200 bg-white'}`}>
+              Aucune vidéo produit pour le moment.
+            </div>
+          ) : (
+            <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
+              {displayedReels.map((reel) => (
+                <div
+                  key={reel.id}
+                  className="relative w-[110px] sm:w-[140px] aspect-[9/16] rounded-xl overflow-hidden flex-shrink-0 snap-start bg-black cursor-pointer group"
+                  onClick={() => openFullscreenReel(reel)}
+                >
+                  <video
+                    ref={(el) => { videoRefs.current[reel.id] = el; if (el) el.muted = isReelMuted(reel.id); }}
+                    src={reel.videoUrl}
+                    poster={reel.thumbnail}
+                    loop
+                    playsInline
+                    autoPlay
+                    className="w-full h-full object-cover"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleReelMute(reel.id); }}
+                    className="absolute top-1.5 right-1.5 p-1.5 rounded-full bg-black/60 text-white z-10"
+                  >
+                    {isReelMuted(reel.id) ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                  </button>
+
+                  {/* NOUVEAU : j'aime + compteur */}
+                  <button
+                    type="button"
+                    disabled={likeLoadingId === reel.productId}
+                    onClick={(e) => { e.stopPropagation(); toggleLike(reel.productId); }}
+                    className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 bg-black/60 rounded-full pl-1 pr-1.5 py-1 text-white"
+                    title="J'aime"
+                  >
+                    <Heart className={`w-3 h-3 ${isProductLiked(reel.productId) ? 'fill-red-500 text-red-500' : ''}`} />
+                    <span className="text-[8px] font-bold">{getLikesCount(reel.productId)}</span>
+                  </button>
+
+                  {/* NOUVEAU : ajouter au panier */}
+                  <button
+                    type="button"
+                    disabled={addingToCartId === reel.productId}
+                    onClick={(e) => { e.stopPropagation(); addToCart(reel.productId); }}
+                    className="absolute top-8 right-1.5 z-10 p-1.5 rounded-full bg-black/60 text-white"
+                    title="Ajouter au panier"
+                  >
+                    <ShoppingCart className="w-3 h-3" />
+                    {justAddedToCartId === reel.productId && (
+                      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-600 text-white text-[7px] font-extrabold rounded-full flex items-center justify-center">1</span>
+                    )}
+                  </button>
+
+                  {reel.product && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); goToProductDetails(reel.productId); }}
+                      className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center gap-1 bg-black/70 backdrop-blur-md rounded-full pl-0.5 pr-2 py-0.5 border border-white/10"
+                    >
+                      <img src={getImageUrl(reel.product.images?.[0])} className="w-4 h-4 rounded-full object-cover flex-shrink-0" alt="" />
+                      <span className="text-[8px] text-white font-bold truncate">{reel.product.title}</span>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ============ NOUVEAU : POUR VOUS / ABONNEMENTS ============ */}
+        <section className="max-w-7xl mx-auto px-2 sm:px-4 pt-8">
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
+            <h2 className="text-sm sm:text-lg font-extrabold tracking-tight">Pour vous</h2>
+          </div>
+
+          {!token ? (
+            <div className={`text-center py-6 text-[11px] rounded-xl border ${darkMode ? 'text-neutral-500 border-neutral-800 bg-neutral-900/30' : 'text-neutral-500 border-neutral-200 bg-white'}`}>
+              Connectez-vous pour suivre vos vendeurs préférés et voir leurs nouveautés ici.
             </div>
           ) : (
             <>
-              {/* En-tête du chat */}
-              <div className={`flex-shrink-0 flex items-center justify-between px-4 py-3 border-b ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
-                <div className="flex items-center gap-2 min-w-0">
-                  <button onClick={() => setShowMobileChat(false)} className="md:hidden p-1.5 rounded-full hover:bg-neutral-800/50 flex-shrink-0">
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                  <div className="relative flex-shrink-0">
-                    <div className="w-9 h-9 rounded-full bg-orange-600 text-white font-bold text-xs flex items-center justify-center overflow-hidden">
-                      {selectedContact.avatar ? (
-                        <img src={getAvatarUrl(selectedContact.avatar)} alt={selectedContact.name} className="w-full h-full object-cover" />
-                      ) : getInitials(selectedContact.name)}
-                    </div>
-                    {onlineUserIds.has(selectedContact.id) && (
-                      <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 ${darkMode ? 'border-neutral-900' : 'border-white'}`} />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <span className="font-bold text-sm block truncate">{selectedContact.name}</span>
-                    <span className="text-[10px] text-neutral-500">
-                      {isTypingInSelected ? <span className="text-orange-500 font-semibold">En train d'écrire...</span> : (onlineUserIds.has(selectedContact.id) ? 'En ligne' : 'Hors ligne')}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button onClick={() => startCall(false)} className={`p-2 rounded-full transition ${darkMode ? 'hover:bg-neutral-800 text-neutral-300' : 'hover:bg-neutral-100 text-neutral-700'}`}>
-                    <Phone className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => startCall(true)} className={`p-2 rounded-full transition ${darkMode ? 'hover:bg-neutral-800 text-neutral-300' : 'hover:bg-neutral-100 text-neutral-700'}`}>
-                    <Video className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+              {followError && <p className="text-red-500 text-[10px] mb-2">{followError}</p>}
 
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 space-y-2">
-                {messages.map((msg) => {
-                  const isMine = msg.senderId === currentUserId;
-                  return (
-                    <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[75%] sm:max-w-[60%] px-3.5 py-2 rounded-2xl text-xs sm:text-sm ${
-                        isMine
-                          ? `bg-orange-600 text-white rounded-br-sm ${msg.pending ? 'opacity-60' : ''}`
-                          : `${darkMode ? 'bg-neutral-800 text-white' : 'bg-white text-neutral-900 border border-neutral-200'} rounded-bl-sm`
-                      }`}>
-                        {renderMessageContent(msg.content)}
-                        <div className={`flex items-center gap-1 mt-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
-                          <span className={`text-[9px] ${isMine ? 'text-orange-100' : 'text-neutral-500'}`}>
-                            {new Date(msg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+              {followedFeed.length > 0 && (
+                <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide mb-4">
+                  {followedFeed.map((product) => {
+                    const productId = product.id || product._id;
+                    const sellerId = product.sellerId || product.userId || product.seller?.id || product.seller?._id;
+                    return (
+                      <div key={productId} className={`w-[130px] sm:w-[170px] flex-shrink-0 rounded-xl overflow-hidden border snap-start ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+                        <div className="aspect-square w-full cursor-pointer" onClick={() => goToProductDetails(productId)}>
+                          <img src={getImageUrl(product.images?.[0])} alt={product.title} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="p-2">
+                          <p className="text-[10px] font-bold truncate">{product.title}</p>
+                          <div className="flex items-center justify-between mt-1">
+                            <span className="text-[10px] text-neutral-400 truncate max-w-[70px]">{product.seller?.name || 'Vendeur'}</span>
+                            <button
+                              type="button"
+                              disabled={followLoadingId === sellerId}
+                              onClick={() => toggleFollow(sellerId)}
+                              className="text-orange-600 flex-shrink-0"
+                              title="Se désabonner"
+                            >
+                              <UserCheck className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {suggestedSellers.length > 0 && (
+                <div>
+                  <p className={`text-[11px] mb-3 ${darkMode ? 'text-neutral-500' : 'text-neutral-500'}`}>Découvrez d'autres vendeurs :</p>
+                  <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    {suggestedSellers.map((seller) => (
+                      <button
+                        key={seller.id}
+                        type="button"
+                        disabled={followLoadingId === seller.id}
+                        onClick={() => toggleFollow(seller.id)}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-full border text-[11px] font-bold flex-shrink-0 transition ${darkMode ? 'bg-neutral-900 border-neutral-800 hover:border-orange-600' : 'bg-white border-neutral-200 hover:border-orange-600'}`}
+                      >
+                        <span className="w-5 h-5 rounded-full bg-orange-700 text-white flex items-center justify-center text-[9px] font-black">{getInitials(seller.name)}</span>
+                        <span className="truncate max-w-[80px]">{seller.name}</span>
+                        <UserPlus className="w-3.5 h-3.5 text-orange-600" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {followedFeed.length === 0 && suggestedSellers.length === 0 && (
+                <span className="text-[11px] text-neutral-500">Aucun vendeur disponible pour le moment.</span>
+              )}
+            </>
+          )}
+        </section>
+
+        {/* ============ BANNIÈRE PROMO ANIMÉE (carrousel auto style affiche, façon Airtel) ============ */}
+        <section className="max-w-7xl mx-auto px-2 sm:px-4 pt-6">
+          <div className="relative rounded-2xl overflow-hidden shadow-xl shadow-black/10">
+            <AnimatePresence initial={false} custom={promoDirection} mode="wait">
+              <motion.div
+                key={promoIndex}
+                custom={promoDirection}
+                variants={promoSlideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ x: { type: 'spring', stiffness: 320, damping: 30 }, opacity: { duration: 0.25 }, scale: { duration: 0.25 } }}
+                className={`relative p-5 sm:p-7 flex flex-col sm:flex-row items-center justify-between gap-4 overflow-hidden bg-gradient-to-br ${activePromo.gradient}`}
+              >
+                {/* Halos flous animés en fond (profondeur "affiche") */}
+                <motion.div
+                  className="pointer-events-none absolute -top-12 -right-8 w-44 h-44 rounded-full bg-white/15 blur-2xl"
+                  animate={{ scale: [1, 1.3, 1], opacity: [0.4, 0.75, 0.4] }}
+                  transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                />
+                <motion.div
+                  className="pointer-events-none absolute -bottom-16 -left-10 w-52 h-52 rounded-full bg-black/10 blur-2xl"
+                  animate={{ scale: [1.2, 1, 1.2], opacity: [0.3, 0.6, 0.3] }}
+                  transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+                />
+
+                {/* Effet "shimmer" qui balaie la bannière, comme un reflet lumineux */}
+                <motion.div
+                  className="pointer-events-none absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/25 to-transparent -skew-x-12"
+                  initial={{ x: '-120%' }}
+                  animate={{ x: '360%' }}
+                  transition={{ duration: 2.2, repeat: Infinity, repeatDelay: 1.6, ease: 'easeInOut' }}
+                />
+
+                {/* Badge flottant qui pulse, façon "1GB" sur l'affiche Airtel */}
+                <motion.div
+                  className="absolute top-3 right-3 sm:top-4 sm:right-4 bg-white text-neutral-900 text-[10px] sm:text-xs font-black px-3 py-1 rounded-full shadow-lg z-10"
+                  animate={{ scale: [1, 1.1, 1] }}
+                  transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+                >
+                  {activePromo.badge}
+                </motion.div>
+
+                <div className="relative z-10 flex items-center gap-3 sm:gap-4">
+                  <motion.div
+                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/20 backdrop-blur-sm text-white flex items-center justify-center flex-shrink-0 border border-white/30"
+                    animate={{ rotate: [0, -8, 8, 0] }}
+                    transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    <activePromo.icon className="w-6 h-6 sm:w-7 sm:h-7" />
+                  </motion.div>
+                  <div>
+                    <motion.h3
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 }}
+                      className="font-black text-sm sm:text-lg text-white drop-shadow-sm leading-tight"
+                    >
+                      {activePromo.title}
+                    </motion.h3>
+                    <motion.p
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                      className="text-[11px] sm:text-xs text-white/85 mt-0.5"
+                    >
+                      {activePromo.subtitle}
+                    </motion.p>
+                  </div>
+                </div>
+
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.25 }}
+                  className="relative z-10"
+                >
+                  <Link
+                    to={activePromo.link}
+                    className="bg-white hover:bg-neutral-100 text-neutral-900 font-extrabold text-xs px-5 py-2.5 rounded-full transition flex items-center gap-1.5 flex-shrink-0 shadow-lg"
+                  >
+                    {activePromo.cta} <ChevronDown className="w-3.5 h-3.5 -rotate-90" />
+                  </Link>
+                </motion.div>
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Points de navigation + barre de progression (avance auto toutes les 5s) */}
+            <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20">
+              {promoSlides.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => handlePromoDotClick(i)}
+                  className="relative w-6 h-1.5 rounded-full bg-white/30 overflow-hidden"
+                  title={`Offre ${i + 1}`}
+                >
+                  {i === promoIndex ? (
+                    <motion.span
+                      key={promoIndex}
+                      className="absolute inset-0 bg-white rounded-full"
+                      style={{ originX: 0 }}
+                      initial={{ scaleX: 0 }}
+                      animate={{ scaleX: 1 }}
+                      transition={{ duration: 5, ease: 'linear' }}
+                    />
+                  ) : i < promoIndex ? (
+                    <span className="absolute inset-0 bg-white rounded-full" />
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ============ CATALOGUE + CATÉGORIES DYNAMIQUES ============ */}
+        <section className="max-w-7xl mx-auto px-2 sm:px-4 py-6">
+          <div className="flex justify-between items-center mb-4 border-b border-neutral-800 pb-3">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600" />
+              <h2 className="text-base sm:text-2xl font-extrabold tracking-tight">BYA BIKO DISPO</h2>
+            </div>
+            <Link to="/products" className="text-orange-600 hover:text-orange-500 font-semibold text-[11px] sm:text-xs uppercase tracking-wider transition flex items-center gap-1">
+              Catalogue complet &rarr;
+            </Link>
+          </div>
+
+          {/* NOUVEAU : chips de catégories dynamiques (calculées depuis /products) */}
+          {dynamicCategories.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-3 mb-3 scrollbar-hide">
+              <button
+                type="button"
+                onClick={() => setActiveCategory(null)}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex-shrink-0 transition border ${!activeCategory ? 'bg-orange-700 text-white border-orange-700' : darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-300' : 'bg-white border-neutral-200 text-neutral-700'}`}
+              >
+                Tous
+              </button>
+              {dynamicCategories.map((cat) => (
+                <button
+                  key={cat.name}
+                  type="button"
+                  onClick={() => setActiveCategory(cat.name === activeCategory ? null : cat.name)}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex-shrink-0 transition border ${activeCategory === cat.name ? 'bg-orange-700 text-white border-orange-700' : darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-300' : 'bg-white border-neutral-200 text-neutral-700'}`}
+                >
+                  {cat.name} <span className="opacity-70">({cat.count})</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {loadingProducts ? (
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
+              {[...Array(8)].map((_, i) => (
+                <div key={i} className={`rounded-xl sm:rounded-2xl overflow-hidden border animate-pulse ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+                  <div className={`aspect-[1/1] sm:aspect-[4/3] w-full ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
+                  <div className="p-2 sm:p-4 space-y-2">
+                    <div className={`h-2.5 w-3/4 rounded ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
+                    <div className={`h-2.5 w-1/2 rounded ${darkMode ? 'bg-neutral-800' : 'bg-neutral-200'}`} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : displayedProducts.length === 0 ? (
+            <div className="text-center py-16 text-neutral-500 text-xs bg-neutral-900/30 rounded-2xl border border-neutral-800">
+              Aucun produit disponible pour le moment. Soyez le premier à en poster un !
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-6">
+              {displayedProducts.map((product, index) => {
+                const productId = product.id || product._id;
+                const prodTitle = product.title || 'Article';
+                const priceUSDValue = product.priceUSD || 0;
+                const priceCDFValue = product.priceCDF || 0;
+                
+                const priceUSDStr = priceUSDValue > 0 ? `${priceUSDValue} $` : 'Sur demande';
+                const priceCDFStr = priceCDFValue > 0 ? `${priceCDFValue.toLocaleString()} CDF` : '';
+
+                const prodCategory = typeof product.category === 'object' && product.category !== null ? product.category.name : 'Général';
+                
+                const imagesList = Array.isArray(product.images) ? product.images : [];
+                const rawImage = imagesList.length > 0 ? imagesList[0] : undefined;
+                const prodImage = getImageUrl(rawImage);
+                const photosCount = imagesList.length;
+
+                const posterName = product.seller?.name || 'Vendeur';
+
+                return (
+                  <motion.div 
+                    key={productId || index}
+                    initial={{ opacity: 0, y: 15 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.3, delay: index * 0.02 }}
+                    onClick={() => goToProductDetails(productId)}
+                    className={`rounded-xl sm:rounded-2xl overflow-hidden border group shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col justify-between cursor-pointer hover:border-orange-600 hover:-translate-y-1 ${
+                      darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'
+                    }`}
+                  >
+                    <div>
+                      {/* Image carrée cliquable -> ProductDetails */}
+                      <div 
+                        className="aspect-[1/1] sm:aspect-[4/3] w-full overflow-hidden bg-neutral-950 relative"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          goToProductDetails(productId);
+                        }}
+                      >
+                        <img 
+                          src={prodImage} 
+                          alt={prodTitle} 
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=500&q=80';
+                          }}
+                        />
+                        <span className="absolute top-1 left-1 sm:top-2 sm:left-2 bg-black/80 backdrop-blur-md text-[8px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded text-orange-500 border border-neutral-700 truncate max-w-[70px] sm:max-w-[100px]">
+                          {prodCategory}
+                        </span>
+
+                        {isRequestPost(product) && (
+                          <span className="absolute top-1 right-1 sm:top-2 sm:right-2 bg-orange-700 text-white text-[8px] sm:text-[10px] font-extrabold px-2 py-1 rounded-full shadow-lg">DEMANDE</span>
+                        )}
+
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setOpenProductMenu(openProductMenu === String(productId) ? null : String(productId)); }} className={`absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 rounded-full backdrop-blur-md border transition ${isRequestPost(product) ? 'right-1 sm:right-2 top-8 sm:top-10' : ''} ${darkMode ? 'bg-black/60 border-white/10 text-white hover:bg-orange-700' : 'bg-white/80 border-black/10 text-neutral-700 hover:bg-orange-700 hover:text-white'}`} title="Plus d’options">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </button>
+
+                        {openProductMenu === String(productId) && (
+                          <div className={`absolute top-11 right-1 sm:top-12 sm:right-2 w-40 rounded-xl border shadow-2xl p-1.5 z-20 ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`} onClick={(e) => e.stopPropagation()}>
+                            <button type="button" onClick={() => { setOpenProductMenu(null); goToProductDetails(productId); }} className={`w-full text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}>Voir l’annonce</button>
+                            <button type="button" onClick={() => shareProduct(product)} className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}><Share2 className="w-3.5 h-3.5 text-orange-600" />Partager</button>
+                            <button type="button" onClick={() => { setOpenProductMenu(null); handleProtectedAction('/messages'); }} className={`w-full text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-neutral-300 hover:bg-neutral-800' : 'text-neutral-700 hover:bg-neutral-100'}`}>Contacter</button>
+                            <button type="button" onClick={() => setOpenProductMenu(null)} className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg text-[11px] ${darkMode ? 'text-red-400 hover:bg-neutral-800' : 'text-red-600 hover:bg-neutral-100'}`}><Flag className="w-3.5 h-3.5" />Signaler</button>
+                          </div>
+                        )}
+
+                        {photosCount > 0 && (
+                          <span className="absolute bottom-1 right-1 bg-black/75 backdrop-blur-md text-white text-[8px] sm:text-[10px] font-bold px-1 py-0.5 rounded flex items-center gap-0.5 border border-neutral-700/60 shadow">
+                            <ImageIcon className="w-2.5 h-2.5 text-orange-500" />
+                            <span>{photosCount}</span>
                           </span>
-                          {isMine && !msg.pending && (
-                            msg.isRead ? <CheckCheck className="w-3 h-3 text-blue-300" /> : <Check className="w-3 h-3 text-orange-100" />
+                        )}
+                      </div>
+
+                      <div className="p-1.5 sm:p-4">
+                        <div className="flex justify-between items-center text-[8px] sm:text-[11px] text-neutral-400 mb-0.5">
+                          <span className="truncate max-w-[50px] sm:max-w-[120px]" title={posterName}><strong>{posterName}</strong></span>
+                          <span className="flex items-center gap-0.5"><MapPin className="w-2 h-2 text-orange-600" /> Bukavu</span>
+                        </div>
+
+                        <h3 className="font-bold text-[9px] sm:text-sm mb-1 truncate group-hover:text-orange-600 transition leading-tight">{prodTitle}</h3>
+
+                        <div>
+                          <div className="text-orange-600 font-black text-[9px] sm:text-sm leading-none">
+                            {priceUSDStr}
+                          </div>
+                          {priceCDFStr && (
+                            <div className="text-[7px] sm:text-[11px] text-neutral-400 font-medium truncate mt-0.5">
+                              ≈ {priceCDFStr}
+                            </div>
                           )}
                         </div>
                       </div>
                     </div>
-                  );
-                })}
-                <div ref={messagesEndRef} />
-              </div>
 
-              {/* Barre de saisie — flex-shrink-0 sur CHAQUE bouton pour empêcher la disparition du bouton envoyer en mobile */}
-              <div className={`flex-shrink-0 border-t px-2 sm:px-3 py-2.5 ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
-                {isRecording ? (
-                  <div className="flex items-center gap-3 px-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
-                    <span className="text-xs font-bold flex-1">Enregistrement... {formatTime(recordingTime)}</span>
-                    <button onClick={stopRecording} className="p-2.5 rounded-full bg-red-600 text-white flex-shrink-0">
-                      <Square className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <form onSubmit={handleSendMessage} className="flex items-center gap-1 sm:gap-1.5">
-                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*,video/*,.pdf,.docx" />
-                    <button type="button" onClick={() => fileInputRef.current?.click()} className={`p-2 rounded-full transition flex-shrink-0 ${darkMode ? 'hover:bg-neutral-800 text-neutral-400' : 'hover:bg-neutral-100 text-neutral-600'}`}>
-                      <Paperclip className="w-4 h-4" />
-                    </button>
+                    <div className="p-1.5 sm:p-4 pt-0">
+                      <div className="grid grid-cols-3 gap-1 sm:gap-1.5">
+                        {/* NOUVEAU : j'aime, avec compteur venant de la base de données */}
+                        <button
+                          type="button"
+                          disabled={likeLoadingId === String(productId)}
+                          onClick={(e) => { e.stopPropagation(); toggleLike(productId); }}
+                          title="J'aime"
+                          className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 py-1 sm:py-2 rounded-md sm:rounded-xl border font-bold text-[8px] sm:text-xs transition ${
+                            isProductLiked(productId)
+                              ? 'bg-red-600 border-red-600 text-white'
+                              : darkMode
+                                ? 'bg-neutral-800/60 border-neutral-700 text-neutral-300 hover:bg-red-600 hover:border-red-600 hover:text-white'
+                                : 'bg-neutral-100 border-neutral-200 text-neutral-600 hover:bg-red-600 hover:border-red-600 hover:text-white'
+                          }`}
+                        >
+                          <Heart className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isProductLiked(productId) ? 'fill-white' : ''}`} />
+                          <span>{getLikesCount(productId)}</span>
+                        </button>
 
-                    <div className="relative flex-shrink-0">
-                      <button type="button" onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`p-2 rounded-full transition ${darkMode ? 'hover:bg-neutral-800 text-neutral-400' : 'hover:bg-neutral-100 text-neutral-600'}`}>
-                        <Smile className="w-4 h-4" />
-                      </button>
-                      <AnimatePresence>
-                        {showEmojiPicker && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className={`absolute bottom-12 left-0 grid grid-cols-4 gap-1 p-2 rounded-xl border shadow-xl z-20 ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}
-                          >
-                            {COMMON_EMOJIS.map((emoji) => (
-                              <button key={emoji} type="button" onClick={() => { setNewMessage(prev => prev + emoji); setShowEmojiPicker(false); }} className="text-lg p-1 hover:bg-neutral-800/30 rounded">
-                                {emoji}
-                              </button>
-                            ))}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+                        {/* NOUVEAU : ajout au panier, persisté en base de données */}
+                        <button
+                          type="button"
+                          disabled={addingToCartId === String(productId)}
+                          onClick={(e) => { e.stopPropagation(); addToCart(productId); }}
+                          title="Ajouter au panier"
+                          className={`relative flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 py-1 sm:py-2 rounded-md sm:rounded-xl border font-bold text-[8px] sm:text-xs transition ${
+                            darkMode
+                              ? 'bg-neutral-800/60 border-neutral-700 text-neutral-300 hover:bg-orange-700 hover:border-orange-700 hover:text-white'
+                              : 'bg-neutral-100 border-neutral-200 text-neutral-600 hover:bg-orange-700 hover:border-orange-700 hover:text-white'
+                          }`}
+                        >
+                          <ShoppingCart className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                          <span className="hidden sm:inline">Panier</span>
+                          {justAddedToCartId === String(productId) && (
+                            <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-red-600 text-white text-[7px] font-extrabold rounded-full flex items-center justify-center">1</span>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            goToProductDetails(productId);
+                          }}
+                          title={`Voir (${photosCount} photo${photosCount > 1 ? 's' : ''})`}
+                          className="py-1 sm:py-2 bg-orange-700/10 hover:bg-orange-700 hover:text-white text-orange-600 font-bold text-[8px] sm:text-xs rounded-md sm:rounded-xl transition border border-orange-600/20 flex items-center justify-center cursor-pointer"
+                        >
+                          Voir
+                        </button>
+                      </div>
                     </div>
-
-                    <input
-                      value={newMessage}
-                      onChange={(e) => handleTyping(e.target.value)}
-                      placeholder="Message..."
-                      className={`flex-1 min-w-0 bg-transparent border rounded-full px-3.5 py-2 text-xs sm:text-sm outline-none focus:border-orange-500 transition ${darkMode ? 'border-neutral-800 bg-neutral-950' : 'border-neutral-300 bg-neutral-50'}`}
-                    />
-
-                    {newMessage.trim() ? (
-                      <button type="submit" className="p-2.5 rounded-full bg-orange-600 hover:bg-orange-700 text-white transition flex-shrink-0">
-                        <Send className="w-4 h-4" />
-                      </button>
-                    ) : (
-                      <button type="button" onClick={startRecording} className="p-2.5 rounded-full bg-orange-600 hover:bg-orange-700 text-white transition flex-shrink-0">
-                        <Mic className="w-4 h-4" />
-                      </button>
-                    )}
-                  </form>
-                )}
-              </div>
-            </>
+                  </motion.div>
+                );
+              })}
+            </div>
           )}
-        </div>
-      </div>
+        </section>
 
-      {/* MODALE APPEL ENTRANT */}
-      <AnimatePresence>
-        {incomingCallData && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className={`w-full max-w-xs p-6 rounded-2xl text-center ${darkMode ? 'bg-neutral-900' : 'bg-white'}`}>
-              <div className="w-20 h-20 rounded-full bg-orange-600 text-white font-bold text-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
-                {getInitials(selectedContact?.name)}
-              </div>
-              <p className="font-extrabold text-sm mb-1">Appel {incomingCallData.isVideo ? 'vidéo' : 'audio'} entrant</p>
-              <p className="text-xs text-neutral-500 mb-6">{selectedContact?.name || 'Contact'}</p>
-              <div className="flex items-center justify-center gap-6">
-                <button onClick={rejectIncomingCall} className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center">
-                  <PhoneOff className="w-5 h-5" />
+        {/* ============ NOUVEAU : PETIT ENCART FEEDBACK ============ */}
+        <section className="max-w-3xl mx-auto px-4 pb-8">
+          <div className={`rounded-2xl border p-5 sm:p-6 text-center ${darkMode ? 'bg-neutral-900 border-neutral-800' : 'bg-white border-neutral-200'}`}>
+            <h3 className="font-extrabold text-sm sm:text-base mb-1 flex items-center justify-center gap-2">
+              <Sparkles className="w-4 h-4 text-orange-600" /> Aidez-nous à améliorer CBF SOKO
+            </h3>
+            <p className="text-[11px] sm:text-xs text-neutral-500 mb-4">
+              Cette page évolue vers plus de social-commerce : dites-nous ce qui vous plaît ou ce qui manque.
+            </p>
+            {feedbackSent ? (
+              <p className="text-orange-600 font-bold text-xs">Merci pour votre retour 🙏</p>
+            ) : (
+              <form onSubmit={handleSendFeedback} className="flex flex-col sm:flex-row gap-2 max-w-xl mx-auto">
+                <input
+                  type="text"
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  placeholder="Une suggestion, un bug, une idée…"
+                  className={`flex-1 px-4 py-2.5 rounded-full border text-xs outline-none focus:border-orange-600 ${darkMode ? 'bg-neutral-950 border-neutral-800 text-white placeholder-neutral-500' : 'bg-neutral-100 border-neutral-300 placeholder-neutral-400'}`}
+                />
+                <button
+                  type="submit"
+                  disabled={sendingFeedback || !feedbackText.trim()}
+                  className="bg-orange-700 hover:bg-orange-800 disabled:opacity-50 text-white font-bold text-xs px-5 py-2.5 rounded-full transition flex items-center justify-center gap-1.5"
+                >
+                  {sendingFeedback ? '...' : <>Envoyer <Send className="w-3.5 h-3.5" /></>}
                 </button>
-                <button onClick={acceptIncomingCall} className="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center">
-                  <Phone className="w-5 h-5" />
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* MODALE APPEL EN COURS */}
-      <AnimatePresence>
-        {(inCall || isCallingOut) && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center p-4">
-            {callType === 'video' && (
-              <video ref={remoteVideoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
+              </form>
             )}
-            {callType === 'video' && (
-              <video ref={localVideoRef} autoPlay playsInline muted className="absolute bottom-24 right-4 w-24 h-32 rounded-xl object-cover border-2 border-white/30" />
-            )}
+            {feedbackError && <p className="text-red-500 text-[10px] mt-2">Échec de l'envoi, réessayez plus tard.</p>}
+          </div>
+        </section>
 
-            <div className="relative z-10 text-center text-white">
-              {callType === 'audio' && (
-                <div className="w-24 h-24 rounded-full bg-orange-600 text-white font-bold text-3xl flex items-center justify-center mx-auto mb-4">
-                  {getInitials(selectedContact?.name)}
+      </main>
+
+      {/* FOOTER — flux normal, tout en bas de page (pas fixed), façon Facebook avec liens légaux */}
+      <footer className={`mt-auto border-t transition-colors ${
+        darkMode ? 'bg-neutral-900 border-neutral-800 text-neutral-400' : 'bg-white border-neutral-200 text-neutral-600'
+      }`}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-8 py-10">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+            
+            {/* Colonne marque */}
+            <div className="col-span-2 md:col-span-1">
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="w-10 h-10 bg-orange-700 rounded-xl flex items-center justify-center overflow-hidden shadow-md border border-orange-600 relative flex-shrink-0">
+                  <img 
+                    src={LOGO_URL} 
+                    alt="CBF SOKO Logo" 
+                    className="w-full h-full object-cover" 
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = 'none';
+                    }} 
+                  />
                 </div>
-              )}
-              <p className="font-extrabold text-lg mb-1">{selectedContact?.name}</p>
-              <p className="text-xs text-neutral-300">{isCallingOut ? 'Appel en cours...' : formatTime(callDuration)}</p>
+                <span className={`font-extrabold text-sm block ${darkMode ? 'text-white' : 'text-neutral-900'}`}>CBF SOKO</span>
+              </div>
+              <p className="text-[12px] leading-relaxed mb-4">
+                La plateforme de confiance pour vos achats et ventes en RDC. Bukavu, Sud-Kivu.
+              </p>
+              <div className="flex items-center gap-2">
+  <a href="#" aria-label="Facebook" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-700 hover:text-white flex items-center justify-center transition"><FacebookIcon className="w-3.5 h-3.5" /></a>
+  <a href="#" aria-label="Instagram" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-700 hover:text-white flex items-center justify-center transition"><InstagramIcon className="w-3.5 h-3.5" /></a>
+  <a href="#" aria-label="Twitter / X" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-700 hover:text-white flex items-center justify-center transition"><TwitterIcon className="w-3.5 h-3.5" /></a>
+  <a href="#" aria-label="Youtube" className="w-8 h-8 rounded-full bg-neutral-800/50 hover:bg-orange-700 hover:text-white flex items-center justify-center transition"><YoutubeIcon className="w-3.5 h-3.5" /></a>
+</div>
             </div>
 
-            <button onClick={endCall} className="relative z-10 mt-10 w-14 h-14 rounded-full bg-red-600 text-white flex items-center justify-center">
-              <PhoneOff className="w-6 h-6" />
-            </button>
-          </motion.div>
-        )}
+            {/* Découvrir */}
+            <div>
+              <h4 className={`text-xs font-extrabold uppercase tracking-wider mb-3 ${darkMode ? 'text-white' : 'text-neutral-900'}`}>Découvrir</h4>
+              <ul className="flex flex-col gap-2 text-[12px]">
+                <li><Link to="/products" className="hover:text-orange-600 transition">Catalogue</Link></li>
+                <li><Link to="/create-product" className="hover:text-orange-600 transition">Vendre un article</Link></li>
+                <li><Link to="/wallet" className="hover:text-orange-600 transition">Portefeuille</Link></li>
+                <li><Link to="/orders" className="hover:text-orange-600 transition">Mes commandes</Link></li>
+                <li><Link to="/cart" className="hover:text-orange-600 transition">Mon panier</Link></li>
+              </ul>
+            </div>
+
+            {/* Assistance */}
+            <div>
+              <h4 className={`text-xs font-extrabold uppercase tracking-wider mb-3 ${darkMode ? 'text-white' : 'text-neutral-900'}`}>Assistance</h4>
+              <ul className="flex flex-col gap-2 text-[12px]">
+                <li><Link to="/messages" className="hover:text-orange-600 transition">Centre d'aide</Link></li>
+                <li><Link to="/messages" className="hover:text-orange-600 transition">Nous contacter</Link></li>
+                <li>
+                  <a href="mailto:support@cbfsoko.com" className="hover:text-orange-600 transition flex items-center gap-1.5">
+                    <Mail className="w-3 h-3" /> support@cbfsoko.com
+                  </a>
+                </li>
+                <li>
+                  <a href="tel:+243971658685" className="hover:text-orange-600 transition flex items-center gap-1.5">
+                    <Phone className="w-3 h-3" /> +243 971 658 685
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            {/* Légal */}
+            <div>
+              <h4 className={`text-xs font-extrabold uppercase tracking-wider mb-3 ${darkMode ? 'text-white' : 'text-neutral-900'}`}>Légal</h4>
+              <ul className="flex flex-col gap-2 text-[12px]">
+                <li><button type="button" onClick={() => setLegalPanel('terms')} className="hover:text-orange-600 transition flex items-center gap-1.5 text-left"><FileText className="w-3 h-3" /> Conditions d'utilisation</button></li>
+                <li><button type="button" onClick={() => setLegalPanel('privacy')} className="hover:text-orange-600 transition flex items-center gap-1.5 text-left"><ShieldCheck className="w-3 h-3" /> Politique de confidentialité</button></li>
+                <li><button type="button" onClick={() => setLegalPanel('cookies')} className="hover:text-orange-600 transition flex items-center gap-1.5 text-left"><Cookie className="w-3 h-3" /> Politique de cookies</button></li>
+                <li><button type="button" onClick={() => setLegalPanel('mentions')} className="hover:text-orange-600 transition flex items-center gap-1.5 text-left"><Scale className="w-3 h-3" /> Mentions légales</button></li>
+                
+              </ul>
+            </div>
+          </div>
+
+          {/* Barre du bas */}
+          <div className={`mt-10 pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] ${darkMode ? 'border-neutral-800' : 'border-neutral-200'}`}>
+            <span>&copy; {new Date().getFullYear()} CBF SOKO. Tous droits réservés.</span>
+            <div className="flex items-center gap-4">
+              <span>Français (RDC)</span>
+              <span className="flex items-center gap-1"><MapPin className="w-3 h-3 text-orange-600" /> Bukavu, RDC</span>
+            </div>
+          </div>
+        </div>
+      </footer>
+
+      <AnimatePresence>
+        {legalPanel && (() => {
+          const legal = legalContent[legalPanel];
+          const LegalIcon = legal.icon;
+          return (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] bg-black/50" onClick={() => setLegalPanel(null)}>
+              <motion.aside initial={{ x: '-105%' }} animate={{ x: 0 }} exit={{ x: '-105%' }} transition={{ type: 'tween', duration: 0.35 }} onClick={(e) => e.stopPropagation()} className={`absolute left-0 top-0 bottom-0 w-[92vw] sm:w-[58vw] lg:w-[52vw] max-w-[760px] border-r shadow-2xl overflow-y-auto ${darkMode ? 'bg-neutral-950 border-neutral-800 text-white' : 'bg-white border-neutral-200 text-neutral-900'}`}>
+                <div className={`sticky top-0 z-10 flex items-center justify-between px-5 sm:px-7 py-4 border-b backdrop-blur-md ${darkMode ? 'bg-neutral-950/95 border-neutral-800' : 'bg-white/95 border-neutral-200'}`}>
+                  <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-orange-600/10 text-orange-600 flex items-center justify-center"><LegalIcon className="w-5 h-5" /></div><div><h2 className="font-black text-sm sm:text-base">{legal.title}</h2><p className="text-[10px] text-neutral-500 mt-0.5">CBF SOKO</p></div></div>
+                  <button type="button" onClick={() => setLegalPanel(null)} className={`p-2 rounded-full transition ${darkMode ? 'hover:bg-neutral-800 text-neutral-400' : 'hover:bg-neutral-100 text-neutral-500'}`}><X className="w-5 h-5" /></button>
+                </div>
+                <div className="px-5 sm:px-8 py-7 space-y-6">
+                  {legal.sections.map(([title, text]) => <section key={title}><h3 className="font-extrabold text-xs sm:text-sm text-orange-600 mb-2">{title}</h3><p className={`text-xs sm:text-sm leading-6 ${darkMode ? 'text-neutral-300' : 'text-neutral-600'}`}>{text}</p></section>)}
+                </div>
+              </motion.aside>
+            </motion.div>
+          );
+        })()}
       </AnimatePresence>
+
+      {/* NOUVEAU : lecteur plein écran d'un reel produit */}
+      <AnimatePresence>
+        {fullscreenReel && (() => {
+          const reelProductId = fullscreenReel.productId;
+          const reelSellerId = fullscreenReel.seller?.id || fullscreenReel.product?.sellerId || fullscreenReel.product?.userId || fullscreenReel.product?.seller?.id || fullscreenReel.product?.seller?._id;
+          const liked = isProductLiked(reelProductId);
+          return (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center"
+              onClick={closeFullscreenReel}
+            >
+              <button
+                type="button"
+                onClick={closeFullscreenReel}
+                className="absolute top-4 right-4 z-20 p-2 rounded-full bg-black/60 text-white hover:bg-black/80 transition"
+                title="Fermer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="relative w-full h-full sm:w-[420px] sm:h-[92vh] sm:rounded-2xl overflow-hidden bg-black"
+              >
+                <video
+                  src={fullscreenReel.videoUrl}
+                  poster={fullscreenReel.thumbnail}
+                  loop
+                  playsInline
+                  autoPlay
+                  muted={isReelMuted(fullscreenReel.id)}
+                  className="w-full h-full object-contain"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => toggleReelMute(fullscreenReel.id)}
+                  className="absolute top-3 left-3 z-10 p-2 rounded-full bg-black/60 text-white"
+                  title="Son"
+                >
+                  {isReelMuted(fullscreenReel.id) ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                </button>
+
+                {/* NOUVEAU : colonne d'actions façon reels (j'aime + panier) */}
+                <div className="absolute right-3 bottom-32 z-10 flex flex-col items-center gap-4">
+                  <button
+                    type="button"
+                    disabled={likeLoadingId === reelProductId}
+                    onClick={() => toggleLike(reelProductId)}
+                    className="flex flex-col items-center gap-1 text-white"
+                    title="J'aime"
+                  >
+                    <span className={`p-2.5 rounded-full ${liked ? 'bg-red-600' : 'bg-black/50'}`}>
+                      <Heart className={`w-5 h-5 ${liked ? 'fill-white' : ''}`} />
+                    </span>
+                    <span className="text-[10px] font-bold">{getLikesCount(reelProductId)}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={addingToCartId === reelProductId}
+                    onClick={() => addToCart(reelProductId)}
+                    className="flex flex-col items-center gap-1 text-white"
+                    title="Ajouter au panier"
+                  >
+                    <span className="relative p-2.5 rounded-full bg-black/50">
+                      <ShoppingCart className="w-5 h-5" />
+                      {justAddedToCartId === reelProductId && (
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center">1</span>
+                      )}
+                    </span>
+                    <span className="text-[10px] font-bold">Panier</span>
+                  </button>
+                </div>
+
+                {/* Bas de l'écran : infos produit + actions principales */}
+                <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 pt-14 pb-4">
+                  {fullscreenReel.product && (
+                    <div className="flex items-center gap-2 mb-3 cursor-pointer" onClick={() => goToProductDetails(reelProductId)}>
+                      <img
+                        src={getImageUrl(fullscreenReel.product.images?.[0])}
+                        className="w-9 h-9 rounded-full object-cover border border-white/30 flex-shrink-0"
+                        alt=""
+                      />
+                      <div className="min-w-0">
+                        <p className="text-white text-xs font-bold truncate">{fullscreenReel.product.title}</p>
+                        <p className="text-white/70 text-[10px] truncate">
+                          {fullscreenReel.seller?.name || fullscreenReel.product.seller?.name || 'Vendeur'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => contactSeller(reelSellerId)}
+                      className="flex items-center justify-center gap-1 bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold py-2.5 rounded-full transition"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" /> Contacter
+                    </button>
+                    <button
+                      type="button"
+                      disabled={likeLoadingId === reelProductId}
+                      onClick={() => toggleLike(reelProductId)}
+                      className={`flex items-center justify-center gap-1 text-[11px] font-bold py-2.5 rounded-full transition ${
+                        liked ? 'bg-red-600 text-white' : 'bg-white/10 hover:bg-white/20 text-white'
+                      }`}
+                    >
+                      <Heart className={`w-3.5 h-3.5 ${liked ? 'fill-white' : ''}`} /> Aimer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => goToProductDetails(reelProductId)}
+                      className="flex items-center justify-center gap-1 bg-orange-700 hover:bg-orange-800 text-white text-[11px] font-bold py-2.5 rounded-full transition"
+                    >
+                      <Package className="w-3.5 h-3.5" /> Voir
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
     </div>
   );
 }
