@@ -523,8 +523,26 @@ export default function Home() {
   }, [token, navigate]);
 
   // --- NOUVEAU : ouvrir / fermer le lecteur plein écran d'un reel produit ---
-  const openFullscreenReel = useCallback((reel: ReelItem) => setFullscreenReel(reel), []);
-  const closeFullscreenReel = useCallback(() => setFullscreenReel(null), []);
+  // IMPORTANT : la vignette de la grille (videoRefs) reste montée en arrière-plan pendant
+  // que le lecteur plein écran est ouvert. Si on ne la met pas en pause, les deux <video>
+  // lisent en même temps -> son doublé quand on active le son en plein écran.
+  const openFullscreenReel = useCallback((reel: ReelItem) => {
+    const gridVideo = videoRefs.current[reel.id];
+    if (gridVideo) gridVideo.pause();
+    setFullscreenReel(reel);
+  }, []);
+  const closeFullscreenReel = useCallback(() => {
+    setFullscreenReel(prev => {
+      if (prev) {
+        const gridVideo = videoRefs.current[prev.id];
+        if (gridVideo) {
+          gridVideo.currentTime = 0;
+          gridVideo.play().catch(() => {});
+        }
+      }
+      return null;
+    });
+  }, []);
 
   // --- NOUVEAU : contacter le vendeur d'un produit depuis un reel ---
   const contactSeller = useCallback((sellerId?: string) => {
