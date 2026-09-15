@@ -11,6 +11,7 @@ import Login from './pages/Login';
 import Register from './pages/register';
 import CreateProduct from './pages/CreateProduct';
 import Orders from './pages/Orders';
+import Cart from './pages/cart';
 import MessagingPage from "./pages/Messages";
 import Notifications from './pages/Notifications';
 import FullUserWallet from './pages/UserWallet';
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/products/:id" element={<ProductDetails />} />
           <Route path="/create-product" element={<CreateProduct />} />
           <Route path="/orders" element={<Orders />} />
+          <Route path="/cart" element={<Cart />} />
           <Route path="/messages" element={<MessagingPage />} />
           <Route path="/notifications" element={<Notifications isLightMode={false} />} />
           <Route path="/wallet" element={<FullUserWallet />} />
